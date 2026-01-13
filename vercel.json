@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/send-outbid-emails",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/process-auction-end",
+      "schedule": "* * * * *"
+    }
+  ]
+}
