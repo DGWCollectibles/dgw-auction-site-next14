@@ -60,6 +60,7 @@ interface Lot {
   status: string;
   images: string[];
   high_bidder_id: string | null;
+  extended_count?: number;
 }
 
 type SortOption = 'lot_number' | 'price_high' | 'price_low' | 'bids_high' | 'bids_low';
@@ -495,7 +496,7 @@ export default function AuctionDetailPage({
             .limit(1)
             .single();
           
-          // Update local state
+          // Update local state (including ends_at for soft-close)
           setLots(prevLots => prevLots.map(lot => 
             lot.id === updatedLot.id 
               ? { 
@@ -503,6 +504,8 @@ export default function AuctionDetailPage({
                   current_bid: updatedLot.current_bid, 
                   bid_count: updatedLot.bid_count,
                   high_bidder_id: winningBid?.user_id || lot.high_bidder_id,
+                  ends_at: updatedLot.ends_at,
+                  extended_count: updatedLot.extended_count,
                 }
               : lot
           ));
@@ -517,14 +520,16 @@ export default function AuctionDetailPage({
   }, [auction]);
 
   // Handler for when a bid is placed - updates local state immediately
-  const handleBidPlaced = (lotId: string, newBid: number, bidderId: string, newBidCount?: number) => {
+  const handleBidPlaced = (lotId: string, newBid: number, bidderId: string, newBidCount?: number, newEndsAt?: string, newExtendedCount?: number) => {
     setLots(prevLots => prevLots.map(lot => 
       lot.id === lotId 
         ? { 
             ...lot, 
             current_bid: newBid, 
             bid_count: newBidCount !== undefined ? newBidCount : (lot.bid_count || 0) + 1, 
-            high_bidder_id: bidderId 
+            high_bidder_id: bidderId,
+            ends_at: newEndsAt || lot.ends_at,
+            extended_count: newExtendedCount ?? lot.extended_count
           }
         : lot
     ));
@@ -816,7 +821,7 @@ function LotCard({
   user: any;
   auctionEnded: boolean;
   isOutbid: boolean;
-  onBidPlaced: (lotId: string, newBid: number, bidderId: string, newBidCount?: number) => void;
+  onBidPlaced: (lotId: string, newBid: number, bidderId: string, newBidCount?: number, newEndsAt?: string, newExtendedCount?: number) => void;
 }) {
   const router = useRouter();
   const [timeLeft, setTimeLeft] = useState("");
@@ -899,10 +904,10 @@ function LotCard({
 
       if (error) throw error;
 
-      // Fetch updated lot AND the actual winning bidder
+      // Fetch updated lot (including possibly extended ends_at) AND the actual winning bidder
       const { data: updatedLot } = await supabase
         .from('lots')
-        .select('current_bid, bid_count')
+        .select('current_bid, bid_count, ends_at, extended_count')
         .eq('id', lot.id)
         .single();
       
@@ -916,7 +921,7 @@ function LotCard({
         .single();
       
       if (updatedLot && winningBid) {
-        onBidPlaced(lot.id, updatedLot.current_bid, winningBid.user_id, updatedLot.bid_count);
+        onBidPlaced(lot.id, updatedLot.current_bid, winningBid.user_id, updatedLot.bid_count, updatedLot.ends_at, updatedLot.extended_count);
       }
       
       // Show appropriate message
@@ -1131,8 +1136,13 @@ function LotCard({
         
         {/* Timer */}
         {lot.ends_at && (
-          <div className={`text-xs font-semibold mb-2 ${isEndingSoon ? 'text-red-400' : 'text-dgw-gold'}`}>
-            {timeLeft}
+          <div className={`text-xs font-semibold mb-2 flex items-center gap-2 ${isEndingSoon ? 'text-red-400' : 'text-dgw-gold'}`}>
+            <span>{timeLeft}</span>
+            {lot.extended_count && lot.extended_count > 0 && (
+              <span className="px-1.5 py-0.5 bg-dgw-gold/20 text-dgw-gold text-[0.6rem] uppercase tracking-wider rounded animate-pulse">
+                Extended
+              </span>
+            )}
           </div>
         )}
 
