@@ -34,7 +34,7 @@ function LoginForm() {
       return
     }
 
-    // Force a hard navigation to ensure server picks up new session
+    // Hard navigation to ensure server sees new session
     window.location.href = redirect
   }
 
