@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, Suspense } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -10,10 +10,25 @@ function LoginForm() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
   
   const router = useRouter()
   const searchParams = useSearchParams()
   const redirect = searchParams.get('redirect') || '/account'
+  const isAdminLogin = redirect.startsWith('/admin')
+
+  // Auto sign out when accessing admin login
+  useEffect(() => {
+    if (isAdminLogin) {
+      const signOutFirst = async () => {
+        setSigningOut(true)
+        const supabase = createClient()
+        await supabase.auth.signOut()
+        setSigningOut(false)
+      }
+      signOutFirst()
+    }
+  }, [isAdminLogin])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -39,6 +54,18 @@ function LoginForm() {
 
   return (
     <form onSubmit={handleLogin} className="space-y-5">
+      {isAdminLogin && (
+        <div className="p-4 bg-dgw-gold/10 border border-dgw-gold/20 text-dgw-gold text-sm">
+          🔐 Admin Login — Sign in with your admin credentials
+        </div>
+      )}
+      
+      {signingOut && (
+        <div className="p-4 bg-obsidian-800 text-obsidian-400 text-sm">
+          Signing out previous session...
+        </div>
+      )}
+      
       {error && (
         <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
           {error}

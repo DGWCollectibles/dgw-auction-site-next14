@@ -22,7 +22,8 @@ export default async function AdminLayout({
     .single()
 
   if (!profile?.is_admin) {
-    redirect('/')
+    // If user is logged in but not admin, redirect to login to switch accounts
+    redirect('/auth/login?redirect=/admin')
   }
 
   return (
