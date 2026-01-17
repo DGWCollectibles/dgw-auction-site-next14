@@ -51,6 +51,7 @@ interface Lot {
   lot_number: number;
   title: string;
   description: string | null;
+  category: string | null;
   current_bid: number | null;
   starting_bid: number;
   estimate_low: number | null;
@@ -63,7 +64,8 @@ interface Lot {
   extended_count?: number;
 }
 
-type SortOption = 'lot_number' | 'price_high' | 'price_low' | 'bids_high' | 'bids_low';
+type SortOption = 'lot_number' | 'price_high' | 'price_low' | 'bids_high' | 'bids_low' | 'ending_soon';
+type FilterOption = 'all' | 'ending_soon' | 'no_bids' | 'my_bids' | 'winning' | 'outbid';
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-US', {
@@ -380,8 +382,10 @@ export default function AuctionDetailPage({
   const [incrementsOpen, setIncrementsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortOption>('lot_number');
+  const [filterBy, setFilterBy] = useState<FilterOption>('all');
   const [user, setUser] = useState<any>(null);
   const [userOutbidLots, setUserOutbidLots] = useState<Set<string>>(new Set());
+  const [userBidLots, setUserBidLots] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!slug) return;
@@ -449,6 +453,7 @@ export default function AuctionDetailPage({
         });
         
         setUserOutbidLots(outbidLots);
+        setUserBidLots(userBidLotIds);
       }
 
       // Add bid_count and high_bidder_id
@@ -544,8 +549,33 @@ export default function AuctionDetailPage({
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(lot => 
         lot.title.toLowerCase().includes(query) ||
-        (lot.description?.toLowerCase() || '').includes(query)
+        (lot.description?.toLowerCase() || '').includes(query) ||
+        (lot.category?.toLowerCase() || '').includes(query) ||
+        lot.lot_number.toString().includes(query)
       );
+    }
+    
+    // Category/status filters
+    switch (filterBy) {
+      case 'ending_soon':
+        filtered = filtered.filter(lot => {
+          if (!lot.ends_at) return false;
+          const timeLeft = new Date(lot.ends_at).getTime() - Date.now();
+          return timeLeft > 0 && timeLeft <= 60 * 60 * 1000; // 1 hour
+        });
+        break;
+      case 'no_bids':
+        filtered = filtered.filter(lot => lot.bid_count === 0);
+        break;
+      case 'my_bids':
+        filtered = filtered.filter(lot => userBidLots.has(lot.id));
+        break;
+      case 'winning':
+        filtered = filtered.filter(lot => user && lot.high_bidder_id === user.id);
+        break;
+      case 'outbid':
+        filtered = filtered.filter(lot => userOutbidLots.has(lot.id));
+        break;
     }
     
     // Sort
@@ -561,13 +591,17 @@ export default function AuctionDetailPage({
           return b.bid_count - a.bid_count;
         case 'bids_low':
           return a.bid_count - b.bid_count;
+        case 'ending_soon':
+          const aTime = a.ends_at ? new Date(a.ends_at).getTime() : Infinity;
+          const bTime = b.ends_at ? new Date(b.ends_at).getTime() : Infinity;
+          return aTime - bTime;
         default:
           return 0;
       }
     });
     
     return sorted;
-  }, [lots, searchQuery, sortBy]);
+  }, [lots, searchQuery, sortBy, filterBy, user, userBidLots, userOutbidLots]);
 
   if (loading) {
     return (
@@ -722,7 +756,8 @@ export default function AuctionDetailPage({
       {/* Search & Filter Bar */}
       <section className="sticky top-20 z-30 bg-obsidian-950/95 backdrop-blur-md border-y border-obsidian-800 py-4">
         <div className="max-w-7xl mx-auto px-6">
-          <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+          {/* Top row: Search + Sort */}
+          <div className="flex flex-col sm:flex-row gap-4 items-center justify-between mb-4">
             {/* Search */}
             <div className="relative w-full sm:w-96">
               <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-obsidian-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -730,7 +765,7 @@ export default function AuctionDetailPage({
               </svg>
               <input
                 type="text"
-                placeholder="Search lots..."
+                placeholder="Search lots by title, description, or lot #..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-12 pr-4 py-3 bg-obsidian-900/80 border border-obsidian-700/50 text-obsidian-100 placeholder:text-obsidian-500 focus:outline-none focus:border-dgw-gold/50 transition-colors"
@@ -751,6 +786,7 @@ export default function AuctionDetailPage({
             <div className="flex items-center gap-4">
               <span className="text-sm text-obsidian-500">
                 {filteredAndSortedLots.length} lot{filteredAndSortedLots.length !== 1 ? 's' : ''}
+                {filterBy !== 'all' && ` (filtered)`}
               </span>
               <select
                 value={sortBy}
@@ -758,12 +794,83 @@ export default function AuctionDetailPage({
                 className="px-4 py-3 bg-obsidian-900/80 border border-obsidian-700/50 text-obsidian-200 text-sm focus:outline-none focus:border-dgw-gold/50"
               >
                 <option value="lot_number">Sort by Lot #</option>
+                <option value="ending_soon">Ending Soonest</option>
                 <option value="price_high">Price: High → Low</option>
                 <option value="price_low">Price: Low → High</option>
                 <option value="bids_high">Most Bids</option>
                 <option value="bids_low">Least Bids</option>
               </select>
             </div>
+          </div>
+          
+          {/* Bottom row: Filter pills */}
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setFilterBy('all')}
+              className={`px-4 py-2 text-sm rounded-full transition-all ${
+                filterBy === 'all'
+                  ? 'bg-dgw-gold text-obsidian-950 font-semibold'
+                  : 'bg-obsidian-800/50 text-obsidian-300 hover:bg-obsidian-700/50'
+              }`}
+            >
+              All Lots
+            </button>
+            <button
+              onClick={() => setFilterBy('ending_soon')}
+              className={`px-4 py-2 text-sm rounded-full transition-all ${
+                filterBy === 'ending_soon'
+                  ? 'bg-red-500 text-white font-semibold'
+                  : 'bg-obsidian-800/50 text-obsidian-300 hover:bg-obsidian-700/50'
+              }`}
+            >
+              🔥 Ending Soon
+            </button>
+            <button
+              onClick={() => setFilterBy('no_bids')}
+              className={`px-4 py-2 text-sm rounded-full transition-all ${
+                filterBy === 'no_bids'
+                  ? 'bg-dgw-gold text-obsidian-950 font-semibold'
+                  : 'bg-obsidian-800/50 text-obsidian-300 hover:bg-obsidian-700/50'
+              }`}
+            >
+              No Bids Yet
+            </button>
+            {user && (
+              <>
+                <button
+                  onClick={() => setFilterBy('my_bids')}
+                  className={`px-4 py-2 text-sm rounded-full transition-all ${
+                    filterBy === 'my_bids'
+                      ? 'bg-dgw-gold text-obsidian-950 font-semibold'
+                      : 'bg-obsidian-800/50 text-obsidian-300 hover:bg-obsidian-700/50'
+                  }`}
+                >
+                  My Bids ({userBidLots.size})
+                </button>
+                <button
+                  onClick={() => setFilterBy('winning')}
+                  className={`px-4 py-2 text-sm rounded-full transition-all ${
+                    filterBy === 'winning'
+                      ? 'bg-green-500 text-white font-semibold'
+                      : 'bg-obsidian-800/50 text-obsidian-300 hover:bg-obsidian-700/50'
+                  }`}
+                >
+                  ✓ Winning
+                </button>
+                {userOutbidLots.size > 0 && (
+                  <button
+                    onClick={() => setFilterBy('outbid')}
+                    className={`px-4 py-2 text-sm rounded-full transition-all ${
+                      filterBy === 'outbid'
+                        ? 'bg-red-500 text-white font-semibold'
+                        : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+                    }`}
+                  >
+                    ⚠ Outbid ({userOutbidLots.size})
+                  </button>
+                )}
+              </>
+            )}
           </div>
         </div>
       </section>
@@ -776,13 +883,25 @@ export default function AuctionDetailPage({
               <span className="text-5xl mb-4 block">🔍</span>
               <h3 className="heading-display text-xl mb-2">No lots found</h3>
               <p className="text-obsidian-500">
-                {lots.length === 0 ? 'No lots have been added to this auction yet.' : 'Try adjusting your search terms'}
+                {lots.length === 0 
+                  ? 'No lots have been added to this auction yet.' 
+                  : filterBy !== 'all'
+                    ? `No lots match the "${filterBy.replace('_', ' ')}" filter.`
+                    : 'Try adjusting your search terms.'
+                }
               </p>
-              {searchQuery && (
-                <button onClick={() => setSearchQuery("")} className="mt-4 text-dgw-gold hover:underline">
-                  Clear search
-                </button>
-              )}
+              <div className="mt-4 flex items-center justify-center gap-4">
+                {searchQuery && (
+                  <button onClick={() => setSearchQuery("")} className="text-dgw-gold hover:underline">
+                    Clear search
+                  </button>
+                )}
+                {filterBy !== 'all' && (
+                  <button onClick={() => setFilterBy('all')} className="text-dgw-gold hover:underline">
+                    Show all lots
+                  </button>
+                )}
+              </div>
             </div>
           ) : (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
