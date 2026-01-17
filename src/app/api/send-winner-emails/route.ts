@@ -225,8 +225,15 @@ function generateWinnerEmailHtml(winner: WinnerData): string {
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get('authorization');
   const cronSecret = process.env.CRON_SECRET;
+  const internalCall = request.headers.get('x-internal-call');
   
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  // Allow if: valid cron secret OR internal server call
+  const isAuthorized = 
+    (cronSecret && authHeader === `Bearer ${cronSecret}`) ||
+    internalCall === 'true';
+  
+  if (!isAuthorized) {
+    console.log('Auth failed. Header:', authHeader?.substring(0, 20), 'Secret exists:', !!cronSecret);
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

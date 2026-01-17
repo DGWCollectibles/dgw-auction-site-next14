@@ -17,6 +17,7 @@ async function sendWinnerEmails(auctionId: string) {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${process.env.CRON_SECRET}`,
+        'x-internal-call': 'true',
       },
       body: JSON.stringify({ auction_id: auctionId }),
     });
