@@ -23,9 +23,6 @@ function LoginForm() {
 
     const supabase = createClient()
     
-    // Sign out any existing session first (especially important for admin login)
-    await supabase.auth.signOut()
-    
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -37,8 +34,8 @@ function LoginForm() {
       return
     }
 
-    router.push(redirect)
-    router.refresh()
+    // Force a hard navigation to ensure server picks up new session
+    window.location.href = redirect
   }
 
   return (
