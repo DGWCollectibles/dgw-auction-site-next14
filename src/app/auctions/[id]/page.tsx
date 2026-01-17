@@ -726,21 +726,43 @@ export default function AuctionDetailPage({
 
                 {isEnded && (
                   <div className="mb-5">
-                    <span className="text-[0.6rem] uppercase tracking-widest text-obsidian-500 block mb-2">Auction Ended</span>
-                    <p className="text-obsidian-200">{formatDate(auction.ends_at)}</p>
+                    <span className="text-[0.6rem] uppercase tracking-widest text-green-500 block mb-2">Auction Results</span>
+                    <p className="text-obsidian-400 text-sm">Ended {formatDate(auction.ends_at)}</p>
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-obsidian-800">
-                  <div>
-                    <span className="text-[0.6rem] uppercase tracking-widest text-obsidian-500 block mb-1">Total Lots</span>
-                    <span className="heading-display text-2xl text-white">{lots.length}</span>
+                {isEnded ? (
+                  <div className="grid grid-cols-2 gap-4 pt-4 border-t border-obsidian-800">
+                    <div>
+                      <span className="text-[0.6rem] uppercase tracking-widest text-obsidian-500 block mb-1">Lots Sold</span>
+                      <span className="heading-display text-2xl text-green-400">
+                        {lots.filter(l => l.bid_count > 0).length}
+                      </span>
+                      <span className="text-obsidian-500 text-sm"> / {lots.length}</span>
+                    </div>
+                    <div>
+                      <span className="text-[0.6rem] uppercase tracking-widest text-obsidian-500 block mb-1">Total Realized</span>
+                      <span className="heading-display text-xl text-green-400">
+                        {formatCurrency(
+                          lots
+                            .filter(l => l.bid_count > 0)
+                            .reduce((sum, l) => sum + Math.round((l.current_bid || 0) * (1 + auction.buyers_premium_percent / 100)), 0)
+                        )}
+                      </span>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-[0.6rem] uppercase tracking-widest text-obsidian-500 block mb-1">Buyer&apos;s Premium</span>
-                    <span className="heading-display text-2xl text-white">{auction.buyers_premium_percent}%</span>
+                ) : (
+                  <div className="grid grid-cols-2 gap-4 pt-4 border-t border-obsidian-800">
+                    <div>
+                      <span className="text-[0.6rem] uppercase tracking-widest text-obsidian-500 block mb-1">Total Lots</span>
+                      <span className="heading-display text-2xl text-white">{lots.length}</span>
+                    </div>
+                    <div>
+                      <span className="text-[0.6rem] uppercase tracking-widest text-obsidian-500 block mb-1">Buyer&apos;s Premium</span>
+                      <span className="heading-display text-2xl text-white">{auction.buyers_premium_percent}%</span>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {!user && !isEnded && (
                   <Link href="/auth/signup" className="btn btn-primary w-full mt-6">
@@ -913,6 +935,7 @@ export default function AuctionDetailPage({
                   user={user}
                   auctionEnded={isEnded}
                   isOutbid={userOutbidLots.has(lot.id)}
+                  buyersPremiumPercent={auction.buyers_premium_percent}
                   onBidPlaced={handleBidPlaced}
                 />
               ))}
@@ -933,6 +956,7 @@ function LotCard({
   user,
   auctionEnded,
   isOutbid,
+  buyersPremiumPercent,
   onBidPlaced,
 }: { 
   lot: Lot;
@@ -940,6 +964,7 @@ function LotCard({
   user: any;
   auctionEnded: boolean;
   isOutbid: boolean;
+  buyersPremiumPercent: number;
   onBidPlaced: (lotId: string, newBid: number, bidderId: string, newBidCount?: number, newEndsAt?: string, newExtendedCount?: number) => void;
 }) {
   const router = useRouter();
@@ -1268,13 +1293,48 @@ function LotCard({
         {/* Bid Info */}
         <div className="flex items-center justify-between mb-3 pb-3 border-b border-obsidian-800">
           <div>
-            <span className="text-[0.6rem] uppercase tracking-wider text-obsidian-500 block">
-              {lot.bid_count > 0 ? 'Current Bid' : 'Starting Bid'}
-            </span>
-            <span className="heading-display text-xl text-dgw-gold">{formatCurrency(currentBid)}</span>
+            {auctionEnded && lot.bid_count > 0 ? (
+              <>
+                <span className="text-[0.6rem] uppercase tracking-wider text-obsidian-500 block">
+                  Sold For
+                </span>
+                <span className="heading-display text-xl text-green-400">
+                  {formatCurrency(Math.round(currentBid * (1 + buyersPremiumPercent / 100)))}
+                </span>
+                <span className="text-[0.55rem] text-obsidian-500 block">
+                  incl. {buyersPremiumPercent}% premium
+                </span>
+              </>
+            ) : auctionEnded && lot.bid_count === 0 ? (
+              <>
+                <span className="text-[0.6rem] uppercase tracking-wider text-obsidian-500 block">
+                  Result
+                </span>
+                <span className="heading-display text-lg text-obsidian-500">
+                  No Bids
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="text-[0.6rem] uppercase tracking-wider text-obsidian-500 block">
+                  {lot.bid_count > 0 ? 'Current Bid' : 'Starting Bid'}
+                </span>
+                <span className="heading-display text-xl text-dgw-gold">{formatCurrency(currentBid)}</span>
+              </>
+            )}
           </div>
           <div className="text-right">
-            {isUserWinning ? (
+            {auctionEnded ? (
+              lot.bid_count > 0 ? (
+                <span className="text-xs font-bold text-green-400 bg-green-400/10 px-2 py-1 rounded">
+                  SOLD
+                </span>
+              ) : (
+                <span className="text-xs font-bold text-obsidian-500 bg-obsidian-800 px-2 py-1 rounded">
+                  PASSED
+                </span>
+              )
+            ) : isUserWinning ? (
               <span className="text-xs font-bold text-green-400 bg-green-400/10 px-2 py-1 rounded">
                 ✓ You&apos;re Winning!
               </span>
