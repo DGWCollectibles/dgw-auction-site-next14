@@ -1,13 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
+export const dynamic = 'force-dynamic';
+
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://dgw.auction';
+
+async function sendWinnerEmails(auctionId: string) {
+  try {
+    const response = await fetch(`${SITE_URL}/api/send-winner-emails`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.CRON_SECRET}`,
+      },
+      body: JSON.stringify({ auction_id: auctionId }),
+    });
+    
+    const result = await response.json();
+    console.log(`Winner emails for auction ${auctionId}:`, result);
+    return result;
+  } catch (error) {
+    console.error(`Failed to send winner emails for auction ${auctionId}:`, error);
+    return { error: String(error) };
+  }
+}
+
 export async function POST(request: NextRequest) {
-  // Verify cron secret (optional but recommended)
+  // Verify cron secret
   const authHeader = request.headers.get('authorization');
   const cronSecret = process.env.CRON_SECRET;
   
@@ -42,7 +66,7 @@ export async function POST(request: NextRequest) {
     for (const auction of endedAuctions) {
       console.log(`Processing auction end: ${auction.title} (${auction.id})`);
       
-      // Call the process_auction_end function
+      // Call the process_auction_end function (creates invoices, marks lots sold, etc.)
       const { data, error } = await supabaseAdmin.rpc('process_auction_end', {
         auction_uuid: auction.id
       });
@@ -52,17 +76,19 @@ export async function POST(request: NextRequest) {
         results.push({
           auction_id: auction.id,
           title: auction.title,
-          error: error.message
+          error: error.message,
+          winner_emails: null
         });
       } else {
+        // Send winner emails after successful processing
+        const emailResult = await sendWinnerEmails(auction.id);
+        
         results.push({
           auction_id: auction.id,
           title: auction.title,
-          ...data
+          ...data,
+          winner_emails: emailResult
         });
-
-        // TODO: Trigger winner notification emails here
-        // await sendWinnerEmails(auction.id);
       }
     }
 
