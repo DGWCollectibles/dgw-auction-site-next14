@@ -1000,8 +1000,9 @@ function LotCard({
   const [lotTimerEnded, setLotTimerEnded] = useState(false);
   useEffect(() => {
     if (!lot.ends_at || auctionEnded) return;
+    const endsAt = lot.ends_at;
     const check = () => {
-      if (new Date(lot.ends_at).getTime() - Date.now() <= 0) setLotTimerEnded(true);
+      if (new Date(endsAt).getTime() - Date.now() <= 0) setLotTimerEnded(true);
     };
     check();
     const interval = setInterval(check, 1000);
