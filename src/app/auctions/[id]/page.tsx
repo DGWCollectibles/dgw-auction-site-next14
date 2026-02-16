@@ -400,14 +400,14 @@ export default function AuctionDetailPage({
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
 
-      // Check payment method (via Stripe API, not local table)
+      // Check payment method (fast DB check, not Stripe API -- avoids rate limits at scale)
       if (user) {
         try {
-          const pmRes = await fetch('/api/stripe/payment-methods');
-          if (pmRes.ok) {
-            const pmData = await pmRes.json();
-            setHasPaymentMethod((pmData.paymentMethods || []).length > 0);
-          }
+          const { count } = await supabase
+            .from('payment_methods')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', user.id);
+          setHasPaymentMethod((count || 0) > 0);
         } catch { /* gate stays false */ }
       }
 
@@ -432,20 +432,12 @@ export default function AuctionDetailPage({
         .eq('auction_id', auctionData.id)
         .order('lot_number', { ascending: true });
 
-      // Fetch winning bids for all lots (ordered by most recent)
+      // Build high bidder map directly from lot data (winning_bidder_id is on the lot row)
       const lotIds = (lotsData || []).map(lot => lot.id);
-      const { data: winningBids } = await supabase
-        .from('bids')
-        .select('lot_id, user_id, created_at')
-        .in('lot_id', lotIds)
-        .eq('is_winning', true)
-        .order('created_at', { ascending: false });
-
-      // Create a map of lot_id -> high_bidder_id (first/most recent wins)
       const highBidderMap: Record<string, string> = {};
-      (winningBids || []).forEach(bid => {
-        if (!highBidderMap[bid.lot_id]) {
-          highBidderMap[bid.lot_id] = bid.user_id;
+      (lotsData || []).forEach(lot => {
+        if (lot.winning_bidder_id) {
+          highBidderMap[lot.id] = lot.winning_bidder_id;
         }
       });
 
@@ -470,12 +462,12 @@ export default function AuctionDetailPage({
         setUserBidLots(userBidLotIds);
       }
 
-      // Add bid_count and high_bidder_id
+      // Add bid_count and high_bidder_id (from lot.winning_bidder_id, no extra query needed)
       const lotsWithBidCount = (lotsData || []).map(lot => ({
         ...lot,
         bid_count: lot.bid_count || 0,
-        ends_at: auctionData.ends_at,
-        high_bidder_id: highBidderMap[lot.id] || null,
+        ends_at: lot.ends_at || auctionData.ends_at,
+        high_bidder_id: lot.winning_bidder_id || null,
       }));
 
       setLots(lotsWithBidCount);
@@ -492,8 +484,10 @@ export default function AuctionDetailPage({
     const supabase = createClient();
     
     // Subscribe to changes on lots for this auction
+    let debounceTimers: Record<string, NodeJS.Timeout> = {};
+    
     const channel = supabase
-      .channel('lot-updates')
+      .channel(`lot-updates-${auction.id}`)
       .on(
         'postgres_changes',
         {
@@ -502,38 +496,33 @@ export default function AuctionDetailPage({
           table: 'lots',
           filter: `auction_id=eq.${auction.id}`,
         },
-        async (payload) => {
+        (payload) => {
           const updatedLot = payload.new as any;
           
-          // Fetch the current winning bidder for this lot
-          const { data: winningBid } = await supabase
-            .from('bids')
-            .select('user_id')
-            .eq('lot_id', updatedLot.id)
-            .eq('is_winning', true)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .single();
-          
-          // Update local state (including ends_at for soft-close)
-          setLots(prevLots => prevLots.map(lot => 
-            lot.id === updatedLot.id 
-              ? { 
-                  ...lot, 
-                  current_bid: updatedLot.current_bid, 
-                  bid_count: updatedLot.bid_count,
-                  high_bidder_id: winningBid?.user_id || lot.high_bidder_id,
-                  ends_at: updatedLot.ends_at,
-                  extended_count: updatedLot.extended_count,
-                }
-              : lot
-          ));
+          // Debounce: if same lot updates rapidly (proxy bid cascade), only process the last one
+          if (debounceTimers[updatedLot.id]) clearTimeout(debounceTimers[updatedLot.id]);
+          debounceTimers[updatedLot.id] = setTimeout(() => {
+            // winning_bidder_id is already on the lot row -- NO query needed
+            setLots(prevLots => prevLots.map(lot => 
+              lot.id === updatedLot.id 
+                ? { 
+                    ...lot, 
+                    current_bid: updatedLot.current_bid, 
+                    bid_count: updatedLot.bid_count,
+                    high_bidder_id: updatedLot.winning_bidder_id || lot.high_bidder_id,
+                    ends_at: updatedLot.ends_at,
+                    extended_count: updatedLot.extended_count,
+                  }
+                : lot
+            ));
+          }, 150);
         }
       )
       .subscribe();
 
     // Cleanup on unmount
     return () => {
+      Object.values(debounceTimers).forEach(clearTimeout);
       supabase.removeChannel(channel);
     };
   }, [auction]);

@@ -50,6 +50,7 @@ interface Lot {
   provenance: string | null;
   ends_at: string | null;
   extended_count: number;
+  winning_bidder_id: string | null;
 }
 
 interface Auction {
@@ -278,14 +279,14 @@ export default function LotDetailPage({
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
 
-      // Check if user has a payment method on file (via Stripe API)
+      // Check if user has a payment method on file (fast DB check instead of Stripe API)
       if (user) {
         try {
-          const pmRes = await fetch('/api/stripe/payment-methods');
-          if (pmRes.ok) {
-            const pmData = await pmRes.json();
-            setHasPaymentMethod((pmData.paymentMethods || []).length > 0);
-          }
+          const { count } = await supabase
+            .from('payment_methods')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', user.id);
+          setHasPaymentMethod((count || 0) > 0);
         } catch { /* gate stays false, user sees "add payment" prompt */ }
       }
 
@@ -316,17 +317,28 @@ export default function LotDetailPage({
         .from('bids')
         .select('id, amount, created_at, user_id, is_winning')
         .eq('lot_id', lotId)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(50);
 
       const winningBid = (bidsData || []).find(b => b.is_winning);
       if (winningBid) {
         setHighBidderId(winningBid.user_id);
       }
 
-      // Check if user has bid on this lot
+      // Check if user has bid on this lot (separate fast query since bid history is limited)
       if (user) {
         const hasBid = (bidsData || []).some(b => b.user_id === user.id);
-        setUserHasBid(hasBid);
+        if (!hasBid) {
+          // Bid might be beyond the 50-row window -- do a targeted check
+          const { count } = await supabase
+            .from('bids')
+            .select('*', { count: 'exact', head: true })
+            .eq('lot_id', lotId)
+            .eq('user_id', user.id);
+          setUserHasBid((count || 0) > 0);
+        } else {
+          setUserHasBid(true);
+        }
       }
 
       const userIds = [...new Set((bidsData || []).map(b => b.user_id))];
@@ -361,9 +373,10 @@ export default function LotDetailPage({
     if (!lot) return;
 
     const supabase = createClient();
+    let debounceTimer: NodeJS.Timeout | null = null;
     
     const channel = supabase
-      .channel('lot-detail-updates')
+      .channel(`lot-detail-${lot.id}`)
       .on(
         'postgres_changes',
         {
@@ -372,38 +385,46 @@ export default function LotDetailPage({
           table: 'lots',
           filter: `id=eq.${lot.id}`,
         },
-        async (payload) => {
+        (payload) => {
           const updatedLot = payload.new as Lot;
+          
+          // Update lot state immediately (no query needed)
           setLot(prev => prev ? { ...prev, ...updatedLot } : null);
           
-          const { data: bidsData } = await supabase
-            .from('bids')
-            .select('id, amount, created_at, user_id, is_winning')
-            .eq('lot_id', lot.id)
-            .order('created_at', { ascending: false });
-
-          const winningBid = (bidsData || []).find(b => b.is_winning);
-          if (winningBid) {
-            setHighBidderId(winningBid.user_id);
+          // winning_bidder_id is on the lot row -- use it directly
+          if (updatedLot.winning_bidder_id) {
+            setHighBidderId(updatedLot.winning_bidder_id);
           }
+          
+          // Debounce the bid history refresh (costly query, 200 viewers x N rows)
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(async () => {
+            const { data: bidsData } = await supabase
+              .from('bids')
+              .select('id, amount, created_at, user_id, is_winning')
+              .eq('lot_id', lot.id)
+              .order('created_at', { ascending: false })
+              .limit(50);
 
-          const userIds = [...new Set((bidsData || []).map(b => b.user_id))];
-          const bidderNames: Record<string, string> = {};
-          userIds.forEach((id, index) => {
-            bidderNames[id] = `Bidder ${index + 1}`;
-          });
+            const userIds = [...new Set((bidsData || []).map(b => b.user_id))];
+            const bidderNames: Record<string, string> = {};
+            userIds.forEach((id, index) => {
+              bidderNames[id] = `Bidder ${index + 1}`;
+            });
 
-          const bidsWithNames = (bidsData || []).map(bid => ({
-            ...bid,
-            bidder_name: bidderNames[bid.user_id],
-          }));
+            const bidsWithNames = (bidsData || []).map(bid => ({
+              ...bid,
+              bidder_name: bidderNames[bid.user_id],
+            }));
 
-          setBids(bidsWithNames);
+            setBids(bidsWithNames);
+          }, 200);
         }
       )
       .subscribe();
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
     };
   }, [lot?.id]);

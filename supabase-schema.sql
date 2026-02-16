@@ -412,6 +412,12 @@ create index idx_bids_user on public.bids(user_id);
 create index idx_bids_lot_winning on public.bids(lot_id) where is_winning = true;
 create index idx_bids_lot_maxbid on public.bids(lot_id, max_bid desc nulls last);
 
+-- Composite indexes for 500-user concurrency hot paths
+create index idx_bids_lot_created on public.bids(lot_id, created_at desc);  -- bid history ORDER BY
+create index idx_bids_user_lot on public.bids(user_id, lot_id);  -- "has user bid on lot" check
+create index idx_bids_lot_winning_maxbid on public.bids(lot_id, max_bid desc)  -- proxy engine: find competing max bid
+  where is_winning = true and max_bid is not null;
+
 create index idx_watchlist_user on public.watchlist(user_id);
 create index idx_watchlist_lot on public.watchlist(lot_id);
 
@@ -841,11 +847,12 @@ begin
   -- UPDATE LOT STATE
   -- ========================================================================
 
-  -- Count total bids (including auto-bids)
+  -- Count total bids: increment by 1 (normal) or 2 (if proxy auto-bid also fired)
+  -- Avoids COUNT(*) scan while holding the exclusive row lock
   update public.lots
   set
     current_bid = v_new_current_bid,
-    bid_count = (select count(*) from public.bids where lot_id = p_lot_id),
+    bid_count = bid_count + case when v_auto_bid_id is not null then 2 else 1 end,
     winning_bidder_id = v_new_winner_id,
     status = case when status = 'upcoming' then 'live' else status end
   where id = p_lot_id;
