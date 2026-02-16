@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import NotificationBell from '@/components/NotificationBell'
 import type { User } from '@supabase/supabase-js'
 
 export default function Header() {
@@ -89,6 +90,7 @@ export default function Header() {
               <div className="w-24 h-9 rounded-lg bg-obsidian-800/50 animate-pulse" />
             ) : user ? (
               <>
+                <NotificationBell userId={user.id} />
                 <Link 
                   href="/account" 
                   className="hidden sm:flex items-center gap-2 text-sm text-obsidian-300 hover:text-white transition-colors"

@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
+import WatchlistButton from "@/components/WatchlistButton";
 import { createClient } from "@/lib/supabase/client";
 
 // Bid increment chart (Auction Ninja style)
@@ -1260,14 +1261,9 @@ function LotCard({
         </div>
 
         {/* Heart/Watchlist */}
-        <button 
-          onClick={(e) => e.preventDefault()}
-          className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center text-obsidian-500 hover:text-red-400 transition-colors z-10"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-          </svg>
-        </button>
+        <div className="absolute top-4 right-4 z-10">
+          <WatchlistButton lotId={lot.id} userId={user?.id || null} variant="icon" />
+        </div>
       </Link>
       
       {/* Content */}

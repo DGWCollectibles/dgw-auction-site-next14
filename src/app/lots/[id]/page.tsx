@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
+import WatchlistButton from "@/components/WatchlistButton";
 import { createClient } from "@/lib/supabase/client";
 
 // Bid increment chart
@@ -684,6 +685,11 @@ export default function LotDetailPage({
                 <div className="flex items-center gap-4 mb-4">
                   <div className="flex-1 h-px bg-gradient-to-r from-dgw-gold/50 via-dgw-gold/20 to-transparent" />
                   <span className="text-dgw-gold/60 text-xs">◆</span>
+                </div>
+
+                {/* Save to watchlist */}
+                <div className="mb-4">
+                  <WatchlistButton lotId={lot.id} userId={user?.id || null} variant="full" />
                 </div>
 
                 {/* Estimates */}

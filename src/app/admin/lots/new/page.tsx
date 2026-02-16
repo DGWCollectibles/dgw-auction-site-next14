@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -10,7 +10,7 @@ interface Auction {
   title: string
 }
 
-export default function NewLotPage() {
+function NewLotForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const preselectedAuction = searchParams.get('auction')
@@ -408,5 +408,21 @@ export default function NewLotPage() {
         </div>
       </form>
     </div>
+  )
+}
+
+export default function NewLotPage() {
+  return (
+    <Suspense fallback={
+      <div className="p-8 max-w-3xl">
+        <div className="h-8 w-48 bg-obsidian-800 rounded animate-pulse mb-8" />
+        <div className="space-y-6">
+          <div className="card p-6 h-32 animate-pulse bg-obsidian-800/50" />
+          <div className="card p-6 h-48 animate-pulse bg-obsidian-800/50" />
+        </div>
+      </div>
+    }>
+      <NewLotForm />
+    </Suspense>
   )
 }

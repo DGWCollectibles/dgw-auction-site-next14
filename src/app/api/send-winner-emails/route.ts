@@ -225,15 +225,8 @@ function generateWinnerEmailHtml(winner: WinnerData): string {
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get('authorization');
   const cronSecret = process.env.CRON_SECRET;
-  const internalCall = request.headers.get('x-internal-call');
   
-  // Allow if: valid cron secret OR internal server call
-  const isAuthorized = 
-    (cronSecret && authHeader === `Bearer ${cronSecret}`) ||
-    internalCall === 'true';
-  
-  if (!isAuthorized) {
-    console.log('Auth failed. Header:', authHeader?.substring(0, 20), 'Secret exists:', !!cronSecret);
+  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -332,8 +325,8 @@ export async function POST(request: NextRequest) {
             user_id: invoice.user_id,
             type: 'won',
             title: `You won ${winnerData.lots.length} lot(s)!`,
-            body: `Total due: ${formatCurrency(invoice.total)}`,
-            auction_id: auction.id,
+            message: `Total due: ${formatCurrency(invoice.total)}`,
+            link: `/account`,
             email_sent: true,
           });
 
