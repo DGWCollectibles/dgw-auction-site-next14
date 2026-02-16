@@ -385,6 +385,7 @@ export default function AuctionDetailPage({
   const [sortBy, setSortBy] = useState<SortOption>('lot_number');
   const [filterBy, setFilterBy] = useState<FilterOption>('all');
   const [user, setUser] = useState<any>(null);
+  const [hasPaymentMethod, setHasPaymentMethod] = useState(false);
   const [userOutbidLots, setUserOutbidLots] = useState<Set<string>>(new Set());
   const [userBidLots, setUserBidLots] = useState<Set<string>>(new Set());
 
@@ -397,6 +398,15 @@ export default function AuctionDetailPage({
       // Check if user is logged in
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
+
+      // Check payment method
+      if (user) {
+        const { count } = await supabase
+          .from('payment_methods')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id);
+        setHasPaymentMethod((count || 0) > 0);
+      }
 
       // Fetch auction by slug
       const { data: auctionData, error: auctionError } = await supabase
@@ -934,6 +944,7 @@ export default function AuctionDetailPage({
                   lot={lot} 
                   index={index} 
                   user={user}
+                  hasPaymentMethod={hasPaymentMethod}
                   auctionEnded={isEnded}
                   isOutbid={userOutbidLots.has(lot.id)}
                   buyersPremiumPercent={auction.buyers_premium_percent}
@@ -955,6 +966,7 @@ function LotCard({
   lot, 
   index,
   user,
+  hasPaymentMethod,
   auctionEnded,
   isOutbid,
   buyersPremiumPercent,
@@ -963,6 +975,7 @@ function LotCard({
   lot: Lot;
   index: number;
   user: any;
+  hasPaymentMethod: boolean;
   auctionEnded: boolean;
   isOutbid: boolean;
   buyersPremiumPercent: number;
@@ -1009,6 +1022,11 @@ function LotCard({
   const placeBid = async (amount: number, isIncreasingMax: boolean = false) => {
     if (!user) {
       router.push('/auth/signup');
+      return;
+    }
+
+    if (!hasPaymentMethod) {
+      setBidError('Add a payment method in your account before bidding.');
       return;
     }
 

@@ -245,6 +245,7 @@ export default function LotDetailPage({
   const [user, setUser] = useState<any>(null);
   const [highBidderId, setHighBidderId] = useState<string | null>(null);
   const [userHasBid, setUserHasBid] = useState(false);
+  const [hasPaymentMethod, setHasPaymentMethod] = useState(false);
   
   // Image gallery state
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
@@ -273,6 +274,15 @@ export default function LotDetailPage({
       
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
+
+      // Check if user has a payment method on file
+      if (user) {
+        const { count } = await supabase
+          .from('payment_methods')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id);
+        setHasPaymentMethod((count || 0) > 0);
+      }
 
       const { data: lotData, error: lotError } = await supabase
         .from('lots')
@@ -412,6 +422,11 @@ export default function LotDetailPage({
   const placeBid = async (amount: number, isIncreasingMax: boolean = false) => {
     if (!user) {
       router.push('/auth/signup');
+      return;
+    }
+
+    if (!hasPaymentMethod) {
+      setBidError('Please add a payment method before bidding.');
       return;
     }
 
@@ -796,6 +811,23 @@ export default function LotDetailPage({
                 {/* Bidding UI */}
                 {isLive && !isEnded && (
                   <div className="space-y-4 mt-8">
+                    {/* Payment method gate */}
+                    {user && !hasPaymentMethod && (
+                      <div className="p-5 border border-dgw-gold/20 bg-dgw-gold/5 text-center">
+                        <svg className="w-8 h-8 text-dgw-gold/60 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                        </svg>
+                        <p className="text-obsidian-200 text-sm font-medium mb-1">Payment Method Required</p>
+                        <p className="text-obsidian-500 text-xs mb-4">Add a card on file before placing bids</p>
+                        <Link
+                          href="/account?tab=payment"
+                          className="inline-block px-6 py-2.5 bg-gradient-to-r from-dgw-gold-dark via-dgw-gold to-dgw-gold-light text-[#0a0a0a] font-bold uppercase tracking-[0.15em] text-xs hover:shadow-[0_0_20px_rgba(201,169,98,0.3)] transition-all"
+                        >
+                          Add Payment Method
+                        </Link>
+                      </div>
+                    )}
+
                     {/* Confirmation Overlay */}
                     {showConfirm !== null && (
                       <div className="relative p-6 bg-[#0a0a0a]/95 border border-dgw-gold/30 mb-4">
