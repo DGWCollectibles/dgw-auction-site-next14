@@ -269,7 +269,7 @@ create table public.notifications (
   user_id uuid references public.profiles on delete cascade not null,
 
   type text not null
-    check (type in ('outbid', 'won', 'ending_soon', 'auction_start', 'payment_due', 'shipped')),
+    check (type in ('outbid', 'won', 'ending_soon', 'auction_start', 'payment_due', 'shipped', 'message')),
   title text not null,
   message text,  -- notification body text
   link text,     -- optional in-app link (e.g. /auctions/slug, /account)
@@ -1505,3 +1505,75 @@ grant execute on all functions in schema public to anon, authenticated;
 --    /api/process-auction-end  (every 1 min)
 --    /api/send-outbid-emails   (every 5 min)
 -- ============================================================================
+
+
+-- ============================================================================
+-- MESSAGING SYSTEM
+-- ============================================================================
+
+create table public.conversations (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references public.profiles on delete cascade,  -- null = guest
+  guest_name text,
+  guest_email text,
+  subject text not null,
+  status text not null default 'open'
+    check (status in ('open', 'closed', 'archived')),
+  last_message_at timestamptz default now(),
+  unread_by_admin boolean default true,
+  unread_by_user boolean default false,
+  created_at timestamptz default now()
+);
+
+create table public.messages (
+  id uuid default uuid_generate_v4() primary key,
+  conversation_id uuid references public.conversations on delete cascade not null,
+  sender_type text not null check (sender_type in ('user', 'admin', 'guest', 'system')),
+  sender_id uuid references public.profiles on delete set null,
+  body text not null,
+  created_at timestamptz default now()
+);
+
+-- Indexes
+create index idx_conversations_user on public.conversations(user_id);
+create index idx_conversations_status on public.conversations(status);
+create index idx_conversations_last_msg on public.conversations(last_message_at desc);
+create index idx_messages_conversation on public.messages(conversation_id, created_at);
+
+-- RLS
+alter table public.conversations enable row level security;
+alter table public.messages enable row level security;
+
+-- Users can read their own conversations
+create policy "Users read own conversations"
+  on public.conversations for select
+  using (auth.uid() = user_id);
+
+-- Users can insert conversations (they create them)
+create policy "Users create conversations"
+  on public.conversations for insert
+  with check (auth.uid() = user_id or user_id is null);
+
+-- Users can update their own (mark read)
+create policy "Users update own conversations"
+  on public.conversations for update
+  using (auth.uid() = user_id);
+
+-- Messages: users can read messages in their conversations
+create policy "Users read own messages"
+  on public.messages for select
+  using (
+    conversation_id in (
+      select id from public.conversations where user_id = auth.uid()
+    )
+  );
+
+-- Users can insert messages into their conversations
+create policy "Users send messages"
+  on public.messages for insert
+  with check (
+    conversation_id in (
+      select id from public.conversations where user_id = auth.uid()
+    )
+    and sender_type = 'user'
+  );

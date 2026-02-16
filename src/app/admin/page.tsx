@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-US', {
@@ -60,6 +60,15 @@ export default async function AdminDashboard() {
   const sellThrough = totalEndedLots > 0 ? Math.round((soldCount / totalEndedLots) * 100) : 0
   const avgHammer = soldCount > 0 ? gmv / soldCount : 0
   const shipCount = toShipCount || 0
+
+  // Unread messages count (needs admin client to bypass RLS)
+  const adminDb = createAdminClient()
+  const { count: unreadMessageCount } = await adminDb
+    .from('conversations')
+    .select('*', { count: 'exact', head: true })
+    .eq('unread_by_admin', true)
+    .eq('status', 'open')
+  const msgCount = unreadMessageCount || 0
 
   const statCards = [
     { label: 'Gross Merchandise Volume', value: formatCompact(gmv), sub: `${soldCount} lots sold`, color: 'text-dgw-gold', icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
@@ -133,6 +142,20 @@ export default async function AdminDashboard() {
             </p>
           </div>
           <Link href="/admin/shipping" className="text-blue-400 text-sm hover:underline shrink-0">Ship</Link>
+        </div>
+      )}
+
+      {msgCount > 0 && (
+        <div className="card p-4 mb-8 border-purple-500/20 bg-purple-500/5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <svg className="w-5 h-5 text-purple-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            <p className="text-purple-400 text-sm font-medium">
+              {msgCount} unread message{msgCount !== 1 ? 's' : ''}
+            </p>
+          </div>
+          <Link href="/admin/messages" className="text-purple-400 text-sm hover:underline shrink-0">View</Link>
         </div>
       )}
 

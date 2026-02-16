@@ -34,6 +34,7 @@ function getNotificationIcon(type: string): string {
     case 'auction_start': return '🔔'
     case 'payment_due': return '💳'
     case 'shipped': return '📦'
+    case 'message': return '💬'
     default: return '📌'
   }
 }
