@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import Stripe from 'stripe';
+import { getAuthenticatedUserId } from '@/lib/auth-helpers';
+
 export const dynamic = 'force-dynamic';
 
 const supabaseAdmin = createClient(
@@ -12,10 +14,9 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
 export async function GET(request: NextRequest) {
   try {
-    const userId = request.nextUrl.searchParams.get('user_id');
-
+    const userId = await getAuthenticatedUserId();
     if (!userId) {
-      return NextResponse.json({ error: 'user_id required' }, { status: 400 });
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
     // Get user's Stripe customer ID

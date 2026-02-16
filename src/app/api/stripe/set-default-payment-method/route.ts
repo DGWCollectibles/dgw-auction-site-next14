@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import Stripe from 'stripe';
+import { getAuthenticatedUserId } from '@/lib/auth-helpers';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -11,21 +12,32 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
 export async function POST(request: NextRequest) {
   try {
-    const { user_id, payment_method_id } = await request.json();
+    const userId = await getAuthenticatedUserId();
+    if (!userId) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    }
 
-    if (!user_id || !payment_method_id) {
-      return NextResponse.json({ error: 'user_id and payment_method_id required' }, { status: 400 });
+    const { payment_method_id } = await request.json();
+
+    if (!payment_method_id) {
+      return NextResponse.json({ error: 'payment_method_id required' }, { status: 400 });
     }
 
     // Get user's Stripe customer ID
     const { data: profile } = await supabaseAdmin
       .from('profiles')
       .select('stripe_customer_id')
-      .eq('id', user_id)
+      .eq('id', userId)
       .single();
 
     if (!profile?.stripe_customer_id) {
       return NextResponse.json({ error: 'No Stripe customer found' }, { status: 404 });
+    }
+
+    // Verify the payment method belongs to this customer
+    const pm = await stripe.paymentMethods.retrieve(payment_method_id);
+    if (pm.customer !== profile.stripe_customer_id) {
+      return NextResponse.json({ error: 'Payment method does not belong to this user' }, { status: 403 });
     }
 
     // Set as default payment method

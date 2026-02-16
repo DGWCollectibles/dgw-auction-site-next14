@@ -70,15 +70,17 @@ export default function Header() {
             <Link href="/auctions" className="nav-link">
               Auctions
             </Link>
-            <Link href="/categories" className="nav-link">
-              Categories
+            <Link href="/search" className="nav-link">
+              Browse
             </Link>
             <Link href="/results" className="nav-link">
               Results
             </Link>
-            <Link href="/how-it-works" className="nav-link">
-              How It Works
-            </Link>
+            {user && (
+              <Link href="/account/watchlist" className="nav-link">
+                Saved
+              </Link>
+            )}
           </nav>
 
           {/* Auth Buttons */}

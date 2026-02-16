@@ -74,7 +74,7 @@ export default function PaymentMethodsPage() {
             <div className="absolute bottom-3 left-3 w-4 h-4 border-b border-l border-[#C9A962]/40" />
             <div className="absolute bottom-3 right-3 w-4 h-4 border-b border-r border-[#C9A962]/40" />
 
-            <PaymentMethods userId={user.id} />
+            <PaymentMethods />
           </div>
 
           {/* Info Box */}

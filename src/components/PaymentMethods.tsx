@@ -108,7 +108,7 @@ function AddCardForm({
   );
 }
 
-export default function PaymentMethods({ userId }: { userId: string }) {
+export default function PaymentMethods() {
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddCard, setShowAddCard] = useState(false);
@@ -116,7 +116,7 @@ export default function PaymentMethods({ userId }: { userId: string }) {
   const [processing, setProcessing] = useState<string | null>(null);
 
   const fetchPaymentMethods = async () => {
-    const res = await fetch(`/api/stripe/payment-methods?user_id=${userId}`);
+    const res = await fetch(`/api/stripe/payment-methods`);
     const data = await res.json();
     setPaymentMethods(data.paymentMethods || []);
     setLoading(false);
@@ -124,7 +124,7 @@ export default function PaymentMethods({ userId }: { userId: string }) {
 
   useEffect(() => {
     fetchPaymentMethods();
-  }, [userId]);
+  }, []);
 
   const handleAddCard = async () => {
     setShowAddCard(true);
@@ -133,7 +133,7 @@ export default function PaymentMethods({ userId }: { userId: string }) {
     const res = await fetch('/api/stripe/create-setup-intent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: userId }),
+      body: JSON.stringify({}),
     });
 
     const data = await res.json();
@@ -149,7 +149,7 @@ export default function PaymentMethods({ userId }: { userId: string }) {
     await fetch('/api/stripe/set-default-payment-method', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: userId, payment_method_id: paymentMethodId }),
+      body: JSON.stringify({ payment_method_id: paymentMethodId }),
     });
 
     await fetchPaymentMethods();

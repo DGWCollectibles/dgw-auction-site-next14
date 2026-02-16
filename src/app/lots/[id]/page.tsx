@@ -436,41 +436,36 @@ export default function LotDetailPage({
     try {
       const supabase = createClient();
       
-      const { error } = await supabase
-        .from('bids')
-        .insert({
-          lot_id: lot!.id,
-          user_id: user.id,
-          amount: amount,
-          max_bid: amount,
-        });
+      // Use server-side place_bid RPC for atomic bid processing
+      // Handles: validation, proxy bidding, soft-close extension, outbid notifications
+      const { data: result, error } = await supabase.rpc('place_bid', {
+        p_lot_id: lot!.id,
+        p_user_id: user.id,
+        p_bid_amount: amount,
+        p_max_bid: amount,
+      });
 
       if (error) throw error;
 
-      const { data: updatedLot } = await supabase
-        .from('lots')
-        .select('current_bid, bid_count')
-        .eq('id', lot!.id)
-        .single();
-      
-      const { data: winningBid } = await supabase
-        .from('bids')
-        .select('user_id')
-        .eq('lot_id', lot!.id)
-        .eq('is_winning', true)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
-      
-      if (updatedLot) {
-        setLot(prev => prev ? { ...prev, current_bid: updatedLot.current_bid, bid_count: updatedLot.bid_count } : null);
+      if (result && !result.success) {
+        setBidError(result.error || 'Bid failed');
+        setBidding(false);
+        return;
+      }
+
+      // Update UI from the RPC response (no extra fetches needed)
+      if (result) {
+        setLot(prev => prev ? { 
+          ...prev, 
+          current_bid: result.current_bid, 
+          bid_count: result.bid_count,
+          ends_at: result.ends_at || prev.ends_at,
+          extended_count: result.extended ? (prev.extended_count || 0) + 1 : prev.extended_count,
+        } : null);
+        setHighBidderId(result.winning_bidder_id);
       }
       
-      if (winningBid) {
-        setHighBidderId(winningBid.user_id);
-      }
-      
-      if (winningBid?.user_id === user.id) {
+      if (result?.is_winning) {
         setBidSuccess(true);
         setShowCelebration(true);
         setTimeout(() => setShowCelebration(false), 3500);

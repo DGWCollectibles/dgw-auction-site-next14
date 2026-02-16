@@ -1037,39 +1037,37 @@ function LotCard({
     try {
       const supabase = createClient();
       
-      const { error } = await supabase
-        .from('bids')
-        .insert({
-          lot_id: lot.id,
-          user_id: user.id,
-          amount: amount,
-          max_bid: amount,
-        });
+      // Use server-side place_bid RPC for atomic bid processing
+      // Handles: validation, proxy bidding, soft-close extension, outbid notifications
+      const { data: result, error } = await supabase.rpc('place_bid', {
+        p_lot_id: lot.id,
+        p_user_id: user.id,
+        p_bid_amount: amount,
+        p_max_bid: amount,
+      });
 
       if (error) throw error;
+      
+      if (result && !result.success) {
+        setBidError(result.error || 'Bid failed');
+        setBidding(false);
+        return;
+      }
 
-      // Fetch updated lot (including possibly extended ends_at) AND the actual winning bidder
-      const { data: updatedLot } = await supabase
-        .from('lots')
-        .select('current_bid, bid_count, ends_at, extended_count')
-        .eq('id', lot.id)
-        .single();
-      
-      const { data: winningBid } = await supabase
-        .from('bids')
-        .select('user_id')
-        .eq('lot_id', lot.id)
-        .eq('is_winning', true)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
-      
-      if (updatedLot && winningBid) {
-        onBidPlaced(lot.id, updatedLot.current_bid, winningBid.user_id, updatedLot.bid_count, updatedLot.ends_at, updatedLot.extended_count);
+      // Update UI from the RPC response (no extra fetches needed)
+      if (result) {
+        onBidPlaced(
+          lot.id, 
+          result.current_bid, 
+          result.winning_bidder_id, 
+          result.bid_count, 
+          result.ends_at, 
+          result.extended ? (lot.extended_count || 0) + 1 : lot.extended_count
+        );
       }
       
       // Show appropriate message
-      if (winningBid?.user_id === user.id) {
+      if (result?.is_winning) {
         setBidSuccess(true);
       } else {
         setBidError("Outbid! Someone has a higher max bid.");

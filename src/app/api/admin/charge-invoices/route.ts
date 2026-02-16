@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import Stripe from 'stripe';
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { verifyAdmin, getAdminClient } from '@/lib/admin-auth';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
 export async function POST(request: NextRequest) {
+  // Verify admin access
+  const auth = await verifyAdmin(request);
+  if (!auth.authorized) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+
+  const supabaseAdmin = getAdminClient();
+
   try {
     const { auction_id } = await request.json();
 
@@ -101,7 +104,6 @@ export async function POST(request: NextRequest) {
               status: 'paid',
               stripe_payment_intent_id: paymentIntent.id,
               paid_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
             })
             .eq('id', invoice.id);
 

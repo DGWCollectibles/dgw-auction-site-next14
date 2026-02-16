@@ -56,25 +56,36 @@ export function formatDateTime(date: string | Date): string {
   }).format(new Date(date));
 }
 
-// Bid increment calculation (matches database tiers)
+// ============================================================================
+// BID INCREMENTS (Auction Ninja 14-tier scale)
+// ============================================================================
+// IMPORTANT: This MUST stay in sync with:
+//   1. supabase-schema.sql  (bid_increments table insert data)
+//   2. src/app/auctions/[id]/page.tsx  (bidIncrements const)
+//   3. src/app/lots/[id]/page.tsx      (bidIncrements const)
+// All four locations use the same 14-tier Auction Ninja scale.
+// ============================================================================
+
 const BID_INCREMENTS = [
-  { min: 0, max: 49.99, increment: 1 },
-  { min: 50, max: 99.99, increment: 5 },
-  { min: 100, max: 249.99, increment: 10 },
-  { min: 250, max: 499.99, increment: 25 },
-  { min: 500, max: 999.99, increment: 50 },
-  { min: 1000, max: 2499.99, increment: 100 },
-  { min: 2500, max: 4999.99, increment: 250 },
-  { min: 5000, max: 9999.99, increment: 500 },
-  { min: 10000, max: 24999.99, increment: 1000 },
-  { min: 25000, max: 49999.99, increment: 2500 },
-  { min: 50000, max: 99999.99, increment: 5000 },
-  { min: 100000, max: Infinity, increment: 10000 },
+  { min: 0, max: 21, increment: 1 },
+  { min: 21, max: 60, increment: 2 },
+  { min: 61, max: 200, increment: 5 },
+  { min: 201, max: 500, increment: 10 },
+  { min: 501, max: 1000, increment: 25 },
+  { min: 1001, max: 2500, increment: 50 },
+  { min: 2501, max: 5000, increment: 100 },
+  { min: 5001, max: 10000, increment: 500 },
+  { min: 10001, max: 25000, increment: 1000 },
+  { min: 25001, max: 60000, increment: 2500 },
+  { min: 60001, max: 120000, increment: 5000 },
+  { min: 120001, max: 200000, increment: 7500 },
+  { min: 200001, max: 350000, increment: 10000 },
+  { min: 350001, max: Infinity, increment: 15000 },
 ];
 
 export function getBidIncrement(currentBid: number): number {
   const tier = BID_INCREMENTS.find(
-    (t) => currentBid >= t.min && currentBid <= t.max
+    (t) => currentBid >= t.min && (t.max === Infinity || currentBid < t.max)
   );
   return tier?.increment ?? 1;
 }
@@ -179,7 +190,5 @@ export function getOptimizedImageUrl(
   options: { width?: number; height?: number; quality?: number } = {}
 ): string {
   const { width = 800, quality = 80 } = options;
-  // Add image optimization params if using Supabase image transformation
-  // or integrate with a service like Cloudinary
   return `${url}?width=${width}&quality=${quality}`;
 }
