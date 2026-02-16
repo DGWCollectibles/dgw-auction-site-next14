@@ -41,6 +41,12 @@ export async function POST(request: NextRequest) {
     // Detach the payment method from the customer
     await stripe.paymentMethods.detach(payment_method_id);
 
+    // Also remove from our payment_methods table so payment gate stays in sync
+    await supabaseAdmin
+      .from('payment_methods')
+      .delete()
+      .eq('stripe_payment_method_id', payment_method_id);
+
     return NextResponse.json({ success: true });
 
   } catch (error: any) {
