@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import Header from "@/components/Header";
@@ -59,7 +59,7 @@ function formatTimeRemaining(endsAt: string): string {
   return `${minutes}m`;
 }
 
-export default function SearchPage() {
+function SearchPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   
@@ -423,5 +423,26 @@ export default function SearchPage() {
         )}
       </div>
     </main>
+  );
+}
+
+export default function SearchPage() {
+  return (
+    <Suspense fallback={
+      <main className="min-h-screen bg-obsidian-950">
+        <Header />
+        <div className="max-w-7xl mx-auto px-4 pt-28 pb-20">
+          <div className="h-10 w-64 bg-obsidian-800 rounded animate-pulse mb-8" />
+          <div className="h-14 bg-obsidian-800 rounded-xl animate-pulse mb-6" />
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="aspect-square bg-obsidian-800 rounded animate-pulse" />
+            ))}
+          </div>
+        </div>
+      </main>
+    }>
+      <SearchPageContent />
+    </Suspense>
   );
 }

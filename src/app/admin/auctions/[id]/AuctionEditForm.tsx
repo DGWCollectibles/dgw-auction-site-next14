@@ -15,6 +15,8 @@ interface Auction {
   status: string
   buyers_premium_percent: number
   auto_extend_minutes: number
+  lot_close_interval_seconds: number | null
+  terms_conditions: string | null
 }
 
 export default function AuctionEditForm({ auction }: { auction: Auction }) {
@@ -33,6 +35,8 @@ export default function AuctionEditForm({ auction }: { auction: Auction }) {
     status: auction.status,
     buyers_premium_percent: auction.buyers_premium_percent,
     auto_extend_minutes: auction.auto_extend_minutes,
+    lot_close_interval_seconds: auction.lot_close_interval_seconds || 20,
+    terms_conditions: auction.terms_conditions || '',
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -55,6 +59,8 @@ export default function AuctionEditForm({ auction }: { auction: Auction }) {
         status: formData.status,
         buyers_premium_percent: formData.buyers_premium_percent,
         auto_extend_minutes: formData.auto_extend_minutes,
+        lot_close_interval_seconds: formData.lot_close_interval_seconds,
+        terms_conditions: formData.terms_conditions || null,
       })
       .eq('id', auction.id)
 
@@ -225,6 +231,38 @@ export default function AuctionEditForm({ auction }: { auction: Auction }) {
               className="w-full px-4 py-3 bg-obsidian-900 border border-obsidian-700 rounded-xl text-obsidian-100 focus:outline-none focus:border-dgw-gold"
             />
           </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 mt-4">
+          <div>
+            <label className="block text-sm font-medium text-obsidian-300 mb-2">
+              Lot Close Interval (seconds)
+            </label>
+            <input
+              type="number"
+              value={formData.lot_close_interval_seconds}
+              onChange={(e) => setFormData({ ...formData, lot_close_interval_seconds: Number(e.target.value) })}
+              min="5"
+              max="120"
+              className="w-full px-4 py-3 bg-obsidian-900 border border-obsidian-700 rounded-xl text-obsidian-100 focus:outline-none focus:border-dgw-gold"
+            />
+            <p className="text-xs text-obsidian-500 mt-1">
+              Time between each lot closing. Default: 20s. Used when going live.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <label className="block text-sm font-medium text-obsidian-300 mb-2">
+            Auction-Specific Terms & Conditions
+          </label>
+          <textarea
+            value={formData.terms_conditions}
+            onChange={(e) => setFormData({ ...formData, terms_conditions: e.target.value })}
+            rows={4}
+            placeholder="Optional. Add any terms specific to this auction (e.g. special reserve policies, category-specific disclaimers). General terms always apply."
+            className="w-full px-4 py-3 bg-obsidian-900 border border-obsidian-700 rounded-xl text-obsidian-100 placeholder:text-obsidian-600 focus:outline-none focus:border-dgw-gold resize-none"
+          />
         </div>
       </div>
 
