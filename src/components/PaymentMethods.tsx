@@ -146,14 +146,19 @@ export default function PaymentMethods() {
   const handleSetDefault = async (paymentMethodId: string) => {
     setProcessing(paymentMethodId);
     
-    await fetch('/api/stripe/set-default-payment-method', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ payment_method_id: paymentMethodId }),
-    });
+    try {
+      await fetch('/api/stripe/set-default-payment-method', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payment_method_id: paymentMethodId }),
+      });
 
-    await fetchPaymentMethods();
-    setProcessing(null);
+      await fetchPaymentMethods();
+    } catch (err) {
+      console.error('Set default error:', err);
+    } finally {
+      setProcessing(null);
+    }
   };
 
   const handleDelete = async (paymentMethodId: string) => {
@@ -161,14 +166,19 @@ export default function PaymentMethods() {
     
     setProcessing(paymentMethodId);
     
-    await fetch('/api/stripe/delete-payment-method', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ payment_method_id: paymentMethodId }),
-    });
+    try {
+      await fetch('/api/stripe/delete-payment-method', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payment_method_id: paymentMethodId }),
+      });
 
-    await fetchPaymentMethods();
-    setProcessing(null);
+      await fetchPaymentMethods();
+    } catch (err) {
+      console.error('Delete payment method error:', err);
+    } finally {
+      setProcessing(null);
+    }
   };
 
   const handleCardAdded = () => {

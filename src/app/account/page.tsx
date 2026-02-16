@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 import Header from "@/components/Header";
 import { createClient } from "@/lib/supabase/client";
 
@@ -202,13 +203,27 @@ function BidCard({ bid, showStatus = true }: { bid: BidWithLot; showStatus?: boo
   );
 }
 
-export default function AccountPage() {
+function AccountContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const tabParam = searchParams.get('tab');
+  const [section, setSection] = useState<'bids' | 'orders' | 'settings'>(
+    (tabParam === 'orders' ? 'orders' : tabParam === 'settings' || tabParam === 'payment' ? 'settings' : 'bids') as any
+  );
   const [activeTab, setActiveTab] = useState<'active' | 'won' | 'lost'>('active');
   const [bids, setBids] = useState<BidWithLot[]>([]);
   const [stats, setStats] = useState<UserStats>({ totalBids: 0, activeBids: 0, winning: 0, won: 0 });
+  const [invoices, setInvoices] = useState<any[]>([]);
+  const [invoicesLoading, setInvoicesLoading] = useState(false);
+
+  // Auto-redirect to payment methods page when ?tab=payment
+  useEffect(() => {
+    if (tabParam === 'payment') {
+      router.push('/account/payment-methods');
+    }
+  }, [tabParam, router]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -324,6 +339,27 @@ export default function AccountPage() {
     fetchData();
   }, [router]);
 
+  // Fetch invoices when orders tab is selected
+  useEffect(() => {
+    if (section !== 'orders' || !user || invoices.length > 0) return;
+    
+    const fetchInvoices = async () => {
+      setInvoicesLoading(true);
+      const supabase = createClient();
+      
+      const { data } = await supabase
+        .from('invoices')
+        .select('*, auctions(title, slug), invoice_items(id, lot_title, lot_number, winning_bid, lot_image)')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      setInvoices(data || []);
+      setInvoicesLoading(false);
+    };
+
+    fetchInvoices();
+  }, [section, user]);
+
   // Filter bids by tab
   const filteredBids = bids.filter(bid => {
     const isLive = bid.lot.auction.status === 'live';
@@ -372,6 +408,33 @@ export default function AccountPage() {
             </h1>
             <p className="text-obsidian-400">{user?.email}</p>
           </div>
+
+          {/* Section Navigation */}
+          <div className="flex gap-6 mb-8 border-b border-dgw-gold/10 pb-4">
+            {([
+              { key: 'bids' as const, label: 'My Bids', icon: 'M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z' },
+              { key: 'orders' as const, label: 'Orders & Invoices', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
+              { key: 'settings' as const, label: 'Settings', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z' },
+            ]).map((s) => (
+              <button
+                key={s.key}
+                onClick={() => setSection(s.key)}
+                className={`flex items-center gap-2 pb-2 text-sm font-medium transition-all border-b-2 -mb-[18px] ${
+                  section === s.key
+                    ? 'text-dgw-gold border-dgw-gold'
+                    : 'text-obsidian-400 hover:text-obsidian-200 border-transparent'
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={s.icon} />
+                </svg>
+                {s.label}
+              </button>
+            ))}
+          </div>
+
+          {/* ===== BIDS SECTION ===== */}
+          {section === 'bids' && (<>
 
           {/* Stats Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-10">
@@ -508,30 +571,165 @@ export default function AccountPage() {
             </div>
           )}
 
-          {/* Account Settings */}
-          <div className="mt-12 pt-8 border-t border-dgw-gold/10">
-            <h2 className="text-sm uppercase tracking-[0.2em] text-obsidian-500 mb-4">Account Settings</h2>
-            <div className="grid sm:grid-cols-2 gap-4">
-              <button className="p-4 text-left bg-obsidian-900/50 border border-obsidian-800 hover:border-dgw-gold/30 transition-colors group">
-                <span className="text-obsidian-200 group-hover:text-white transition-colors block mb-1">Profile Information</span>
-                <span className="text-xs text-obsidian-500">Update your name and contact details</span>
-              </button>
-              <button className="p-4 text-left bg-obsidian-900/50 border border-obsidian-800 hover:border-dgw-gold/30 transition-colors group">
-                <span className="text-obsidian-200 group-hover:text-white transition-colors block mb-1">Shipping Address</span>
-                <span className="text-xs text-obsidian-500">Manage your shipping addresses</span>
-              </button>
-              <Link href="/account/payment-methods" className="p-4 text-left bg-obsidian-900/50 border border-obsidian-800 hover:border-dgw-gold/30 transition-colors group">
-                <span className="text-obsidian-200 group-hover:text-white transition-colors block mb-1">Payment Methods</span>
-                <span className="text-xs text-obsidian-500">Add or update payment information</span>
-              </Link>
-              <button className="p-4 text-left bg-obsidian-900/50 border border-obsidian-800 hover:border-dgw-gold/30 transition-colors group">
-                <span className="text-obsidian-200 group-hover:text-white transition-colors block mb-1">Notification Preferences</span>
-                <span className="text-xs text-obsidian-500">Email and SMS settings</span>
-              </button>
+          </>)}
+
+          {/* ===== ORDERS SECTION ===== */}
+          {section === 'orders' && (
+            <div>
+              <h2 className="text-lg font-semibold text-obsidian-100 mb-6">Orders & Invoices</h2>
+              {invoicesLoading ? (
+                <div className="text-center py-12">
+                  <div className="inline-block w-8 h-8 border-2 border-dgw-gold/30 border-t-dgw-gold rounded-full animate-spin mb-4" />
+                </div>
+              ) : invoices.length === 0 ? (
+                <div className="text-center py-16">
+                  <div className="text-5xl mb-4 opacity-20">🧾</div>
+                  <p className="text-obsidian-400 mb-2">No orders yet</p>
+                  <p className="text-obsidian-500 text-sm">Win an auction and your invoice will appear here</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {invoices.map((inv: any) => (
+                    <div
+                      key={inv.id}
+                      className="relative p-5"
+                      style={{
+                        background: 'linear-gradient(145deg, rgba(26, 22, 18, 0.8) 0%, rgba(13, 11, 9, 0.9) 100%)',
+                        border: '1px solid rgba(201, 169, 98, 0.15)',
+                      }}
+                    >
+                      <div className="flex items-start justify-between gap-4 mb-4">
+                        <div>
+                          <p className="text-obsidian-200 font-medium">{(inv.auctions as any)?.title || 'Auction'}</p>
+                          <p className="text-obsidian-500 text-xs mt-0.5">
+                            {new Date(inv.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                          </p>
+                        </div>
+                        <span className={`text-xs px-2.5 py-1 font-semibold uppercase tracking-wider ${
+                          inv.shipped_at ? 'bg-green-500/10 text-green-400 border border-green-500/20' :
+                          inv.status === 'paid' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
+                          inv.status === 'pending' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' :
+                          'bg-red-500/10 text-red-400 border border-red-500/20'
+                        }`}>
+                          {inv.shipped_at ? 'Shipped' : inv.status}
+                        </span>
+                      </div>
+
+                      {/* Items */}
+                      <div className="space-y-2 mb-4">
+                        {(inv.invoice_items || []).map((item: any) => (
+                          <div key={item.id} className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-obsidian-800 shrink-0 overflow-hidden">
+                              {item.lot_image ? (
+                                <img src={item.lot_image} alt="" className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-obsidian-600 text-xs">?</div>
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-obsidian-300 text-sm truncate">Lot {item.lot_number}: {item.lot_title}</p>
+                            </div>
+                            <p className="text-dgw-gold text-sm font-mono shrink-0">{formatCurrency(item.winning_bid)}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Totals */}
+                      <div className="flex items-center justify-between pt-3 border-t border-obsidian-800">
+                        <div className="text-xs text-obsidian-500">
+                          {(inv.invoice_items || []).length} item{(inv.invoice_items || []).length !== 1 ? 's' : ''}
+                          {inv.buyers_premium > 0 && ` + ${formatCurrency(inv.buyers_premium)} premium`}
+                        </div>
+                        <p className="text-dgw-gold font-semibold heading-display text-xl">{formatCurrency(inv.total)}</p>
+                      </div>
+
+                      {/* Tracking */}
+                      {inv.tracking_number && (
+                        <div className="mt-3 pt-3 border-t border-obsidian-800 flex items-center gap-3">
+                          <svg className="w-4 h-4 text-green-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                          </svg>
+                          <div>
+                            <p className="text-obsidian-400 text-xs">Tracking: <code className="text-obsidian-200 bg-obsidian-800 px-1.5 py-0.5 rounded text-xs">{inv.tracking_number}</code></p>
+                            {inv.shipped_at && (
+                              <p className="text-obsidian-600 text-xs mt-0.5">
+                                Shipped {new Date(inv.shipped_at).toLocaleDateString()}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
+          )}
+
+          {/* ===== SETTINGS SECTION ===== */}
+          {section === 'settings' && (
+            <div>
+              <h2 className="text-lg font-semibold text-obsidian-100 mb-6">Account Settings</h2>
+              <div className="grid sm:grid-cols-2 gap-4">
+                <Link href="/account/payment-methods" className="p-5 text-left bg-obsidian-900/50 border border-obsidian-800 hover:border-dgw-gold/30 transition-colors group">
+                  <div className="flex items-center gap-3 mb-2">
+                    <svg className="w-5 h-5 text-dgw-gold" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                    </svg>
+                    <span className="text-obsidian-200 group-hover:text-white transition-colors font-medium">Payment Methods</span>
+                  </div>
+                  <span className="text-xs text-obsidian-500">Add or update your card on file</span>
+                </Link>
+                <Link href="/account/watchlist" className="p-5 text-left bg-obsidian-900/50 border border-obsidian-800 hover:border-dgw-gold/30 transition-colors group">
+                  <div className="flex items-center gap-3 mb-2">
+                    <svg className="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                    </svg>
+                    <span className="text-obsidian-200 group-hover:text-white transition-colors font-medium">Watchlist</span>
+                  </div>
+                  <span className="text-xs text-obsidian-500">View your saved lots</span>
+                </Link>
+                <div className="p-5 text-left bg-obsidian-900/50 border border-obsidian-800">
+                  <div className="flex items-center gap-3 mb-2">
+                    <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    <span className="text-obsidian-200 font-medium">Profile</span>
+                  </div>
+                  <p className="text-xs text-obsidian-500">{user?.email}</p>
+                </div>
+                <div className="p-5 text-left bg-obsidian-900/50 border border-obsidian-800">
+                  <div className="flex items-center gap-3 mb-2">
+                    <svg className="w-5 h-5 text-obsidian-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                    </svg>
+                    <span className="text-obsidian-200 font-medium">Notifications</span>
+                  </div>
+                  <p className="text-xs text-obsidian-500">Email and outbid alert preferences</p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </section>
     </main>
+  );
+}
+
+export default function AccountPage() {
+  return (
+    <Suspense fallback={
+      <main className="min-h-screen bg-[#0a0a0a] pt-20">
+        <Header />
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <div className="text-center">
+            <div className="inline-block w-8 h-8 border-2 border-dgw-gold/30 border-t-dgw-gold rounded-full animate-spin mb-4" />
+            <p className="text-dgw-gold/70 font-light tracking-widest text-sm">LOADING</p>
+          </div>
+        </div>
+      </main>
+    }>
+      <AccountContent />
+    </Suspense>
   );
 }

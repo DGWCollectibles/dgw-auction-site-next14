@@ -271,7 +271,8 @@ create table public.notifications (
   type text not null
     check (type in ('outbid', 'won', 'ending_soon', 'auction_start', 'payment_due', 'shipped')),
   title text not null,
-  body text,
+  message text,  -- notification body text
+  link text,     -- optional in-app link (e.g. /auctions/slug, /account)
 
   -- References
   lot_id uuid references public.lots,

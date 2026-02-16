@@ -66,22 +66,26 @@ export function StatusSelector({ auctionId, currentStatus }: { auctionId: string
     setGoLiveResult(null)
     setGoLiveError(null)
 
-    const supabase = createClient()
-    
-    const { error } = await supabase
-      .from('auctions')
-      .update({ status: newStatus })
-      .eq('id', auctionId)
+    try {
+      const supabase = createClient()
+      
+      const { error } = await supabase
+        .from('auctions')
+        .update({ status: newStatus })
+        .eq('id', auctionId)
 
-    if (error) {
-      alert('Error updating status: ' + error.message)
+      if (error) {
+        alert('Error updating status: ' + error.message)
+        return
+      }
+
+      setStatus(newStatus)
+      router.refresh()
+    } catch (err: any) {
+      alert('Error updating status: ' + (err.message || 'Unknown error'))
+    } finally {
       setLoading(false)
-      return
     }
-
-    setStatus(newStatus)
-    setLoading(false)
-    router.refresh()
   }
 
   const statusOptions = [
@@ -273,10 +277,7 @@ export function EndAuctionButton({ auctionId }: { auctionId: string }) {
     try {
       const res = await fetch('/api/process-auction-end', {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.CRON_SECRET || ''}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
       })
       
       // Refresh regardless of processing result

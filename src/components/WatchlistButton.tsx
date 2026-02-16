@@ -50,41 +50,46 @@ export default function WatchlistButton({ lotId, userId, variant = 'icon', class
     setLoading(true)
     const supabase = createClient()
 
-    if (saved && watchlistId) {
-      // Optimistic remove
-      setSaved(false)
-      const { error } = await supabase
-        .from('watchlist')
-        .delete()
-        .eq('id', watchlistId)
+    try {
+      if (saved && watchlistId) {
+        // Optimistic remove
+        setSaved(false)
+        const { error } = await supabase
+          .from('watchlist')
+          .delete()
+          .eq('id', watchlistId)
 
-      if (error) {
-        setSaved(true) // Revert
+        if (error) {
+          setSaved(true) // Revert
+        } else {
+          setWatchlistId(null)
+        }
       } else {
-        setWatchlistId(null)
-      }
-    } else {
-      // Optimistic add
-      setSaved(true)
-      const { data, error } = await supabase
-        .from('watchlist')
-        .insert({
-          user_id: userId,
-          lot_id: lotId,
-          notify_before_end: true,
-          notify_on_outbid: true,
-        })
-        .select('id')
-        .single()
+        // Optimistic add
+        setSaved(true)
+        const { data, error } = await supabase
+          .from('watchlist')
+          .insert({
+            user_id: userId,
+            lot_id: lotId,
+            notify_before_end: true,
+            notify_on_outbid: true,
+          })
+          .select('id')
+          .single()
 
-      if (error) {
-        setSaved(false) // Revert
-      } else if (data) {
-        setWatchlistId(data.id)
+        if (error) {
+          setSaved(false) // Revert
+        } else if (data) {
+          setWatchlistId(data.id)
+        }
       }
+    } catch (err) {
+      // Revert on unexpected error
+      setSaved(prev => !prev)
+    } finally {
+      setLoading(false)
     }
-
-    setLoading(false)
   }
 
   if (variant === 'full') {

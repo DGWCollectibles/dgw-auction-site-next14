@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
 import WatchlistButton from "@/components/WatchlistButton";
+import LotCountdown from "@/components/LotCountdown";
 import { createClient } from "@/lib/supabase/client";
 
 // Bid increment chart (Auction Ninja style)
@@ -399,13 +400,15 @@ export default function AuctionDetailPage({
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
 
-      // Check payment method
+      // Check payment method (via Stripe API, not local table)
       if (user) {
-        const { count } = await supabase
-          .from('payment_methods')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id);
-        setHasPaymentMethod((count || 0) > 0);
+        try {
+          const pmRes = await fetch('/api/stripe/payment-methods');
+          if (pmRes.ok) {
+            const pmData = await pmRes.json();
+            setHasPaymentMethod((pmData.paymentMethods || []).length > 0);
+          }
+        } catch { /* gate stays false */ }
       }
 
       // Fetch auction by slug
@@ -982,16 +985,30 @@ function LotCard({
   onBidPlaced: (lotId: string, newBid: number, bidderId: string, newBidCount?: number, newEndsAt?: string, newExtendedCount?: number) => void;
 }) {
   const router = useRouter();
-  const [timeLeft, setTimeLeft] = useState("");
   const [showCustomBid, setShowCustomBid] = useState(false);
   const [customBidAmount, setCustomBidAmount] = useState("");
   const [bidding, setBidding] = useState(false);
+  const biddingRef = useRef(false); // Synchronous double-tap guard
   const [bidError, setBidError] = useState("");
   const [bidSuccess, setBidSuccess] = useState(false);
   const [showConfirm, setShowConfirm] = useState<number | null>(null);
   const [imageIndex, setImageIndex] = useState(0);
   const [showIncreaseMax, setShowIncreaseMax] = useState(false);
   const [maxBidAmount, setMaxBidAmount] = useState("");
+
+  // Per-lot timer: detect when THIS lot's timer has expired
+  const [lotTimerEnded, setLotTimerEnded] = useState(false);
+  useEffect(() => {
+    if (!lot.ends_at || auctionEnded) return;
+    const check = () => {
+      if (new Date(lot.ends_at).getTime() - Date.now() <= 0) setLotTimerEnded(true);
+    };
+    check();
+    const interval = setInterval(check, 1000);
+    return () => clearInterval(interval);
+  }, [lot.ends_at, auctionEnded]);
+
+  const effectivelyEnded = auctionEnded || lotTimerEnded;
   
   // Swipe state
   const [touchStart, setTouchStart] = useState<number | null>(null);
@@ -1000,16 +1017,8 @@ function LotCard({
   
   const currentBid = lot.current_bid || lot.starting_bid;
   const minBid = getMinBid(currentBid);
-  const isEndingSoon = lot.ends_at ? new Date(lot.ends_at).getTime() - Date.now() < 60 * 60 * 1000 : false;
   const isUserWinning = user && lot.high_bidder_id === user.id;
-
-  useEffect(() => {
-    if (!lot.ends_at) return;
-    const update = () => setTimeLeft(formatTimeRemaining(lot.ends_at!));
-    update();
-    const interval = setInterval(update, 1000);
-    return () => clearInterval(interval);
-  }, [lot.ends_at]);
+  const [showTakeover, setShowTakeover] = useState(false);
 
   // Reset success message after 2 seconds
   useEffect(() => {
@@ -1019,7 +1028,18 @@ function LotCard({
     }
   }, [bidSuccess]);
 
+  // Takeover glow animation (3 seconds)
+  useEffect(() => {
+    if (showTakeover) {
+      const timer = setTimeout(() => setShowTakeover(false), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [showTakeover]);
+
   const placeBid = async (amount: number, isIncreasingMax: boolean = false) => {
+    // Synchronous double-tap guard
+    if (biddingRef.current) return;
+
     if (!user) {
       router.push('/auth/signup');
       return;
@@ -1048,6 +1068,7 @@ function LotCard({
       return;
     }
 
+    biddingRef.current = true;
     setBidding(true);
     setBidError("");
     setShowConfirm(null);
@@ -1069,6 +1090,7 @@ function LotCard({
       
       if (result && !result.success) {
         setBidError(result.error || 'Bid failed');
+        biddingRef.current = false;
         setBidding(false);
         return;
       }
@@ -1088,6 +1110,7 @@ function LotCard({
       // Show appropriate message
       if (result?.is_winning) {
         setBidSuccess(true);
+        setShowTakeover(true);
       } else {
         setBidError("Outbid! Someone has a higher max bid.");
       }
@@ -1099,6 +1122,7 @@ function LotCard({
       console.error('Bid error:', error);
       setBidError(error.message || 'Failed to place bid');
     } finally {
+      biddingRef.current = false;
       setBidding(false);
     }
   };
@@ -1141,7 +1165,7 @@ function LotCard({
     if (!touchStart || !touchEnd) return;
     const distance = touchEnd - touchStart;
     // If swiped more than 80px to the right, trigger quick bid (but not if already winning)
-    if (distance > 80 && user && !auctionEnded && !isUserWinning) {
+    if (distance > 80 && user && !effectivelyEnded && !isUserWinning) {
       setShowConfirm(minBid);
     }
     setTouchStart(null);
@@ -1151,26 +1175,104 @@ function LotCard({
 
   return (
     <div
-      className="group flex flex-col relative overflow-hidden transition-all duration-500 hover:shadow-[0_0_40px_rgba(201,169,98,0.15)]"
+      className={`group flex flex-col relative overflow-hidden transition-all duration-500 hover:shadow-[0_0_40px_rgba(201,169,98,0.15)] ${
+        showTakeover ? 'shadow-[0_0_40px_rgba(34,197,94,0.4)] z-10' : 
+        isUserWinning && !effectivelyEnded ? 'shadow-[0_0_20px_rgba(34,197,94,0.12)]' : ''
+      }`}
       style={{
         animation: 'riseUp 0.4s ease-out forwards',
         animationDelay: `${index * 0.03}s`,
         opacity: 0,
         background: 'linear-gradient(180deg, #1a1612 0%, #0d0b09 100%)',
-        border: '1px solid rgba(201, 169, 98, 0.1)',
+        border: showTakeover ? '1px solid rgba(34, 197, 94, 0.6)' :
+                isUserWinning && !effectivelyEnded ? '1px solid rgba(34, 197, 94, 0.2)' :
+                '1px solid rgba(201, 169, 98, 0.1)',
+        transition: 'border-color 0.5s, box-shadow 0.5s',
       }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      {/* Corner accents */}
-      <div className="absolute top-2 left-2 w-3 h-3 border-t border-l border-dgw-gold/20 z-20 transition-colors group-hover:border-dgw-gold/50" />
-      <div className="absolute top-2 right-2 w-3 h-3 border-t border-r border-dgw-gold/20 z-20 transition-colors group-hover:border-dgw-gold/50" />
-      <div className="absolute bottom-2 left-2 w-3 h-3 border-b border-l border-dgw-gold/20 z-20 transition-colors group-hover:border-dgw-gold/50" />
-      <div className="absolute bottom-2 right-2 w-3 h-3 border-b border-r border-dgw-gold/20 z-20 transition-colors group-hover:border-dgw-gold/50" />
+      {/* Takeover sweep animation */}
+      {showTakeover && (
+        <>
+          {/* Green energy sweep */}
+          <div className="absolute inset-0 z-40 pointer-events-none overflow-hidden">
+            <div 
+              className="absolute inset-0"
+              style={{
+                background: 'linear-gradient(180deg, rgba(34,197,94,0.15) 0%, rgba(34,197,94,0.05) 50%, transparent 100%)',
+                animation: 'takeoverFadeIn 0.4s ease-out',
+              }}
+            />
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                background: 'linear-gradient(90deg, transparent 0%, rgba(34,197,94,0.25) 50%, transparent 100%)',
+                animation: 'takeoverSweep 0.8s ease-out',
+              }}
+            />
+            {/* Edge glow lines */}
+            <div 
+              className="absolute top-0 left-0 right-0 h-px"
+              style={{
+                background: 'linear-gradient(90deg, transparent, rgba(34,197,94,0.8), transparent)',
+                animation: 'takeoverFadeIn 0.3s ease-out',
+              }}
+            />
+            <div 
+              className="absolute bottom-0 left-0 right-0 h-px"
+              style={{
+                background: 'linear-gradient(90deg, transparent, rgba(34,197,94,0.8), transparent)',
+                animation: 'takeoverFadeIn 0.3s ease-out 0.1s both',
+              }}
+            />
+          </div>
+          {/* Checkmark burst */}
+          <div className="absolute top-3 right-3 z-50 pointer-events-none">
+            <div 
+              className="w-7 h-7 rounded-full bg-green-500 flex items-center justify-center"
+              style={{
+                animation: 'takeoverBadge 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                boxShadow: '0 0 20px rgba(34,197,94,0.6)',
+              }}
+            >
+              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Persistent winning glow (subtle, always visible when high bidder) */}
+      {isUserWinning && !effectivelyEnded && !showTakeover && (
+        <div className="absolute inset-0 z-0 pointer-events-none">
+          <div className="absolute inset-0 bg-gradient-to-b from-green-500/[0.04] to-transparent" />
+          <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-green-500/30 to-transparent" />
+        </div>
+      )}
+
+      {/* Corner accents - green when winning */}
+      <div className={`absolute top-2 left-2 w-3 h-3 border-t border-l z-20 transition-colors duration-500 ${
+        showTakeover ? 'border-green-400' : isUserWinning && !effectivelyEnded ? 'border-green-500/40' : 'border-dgw-gold/20 group-hover:border-dgw-gold/50'
+      }`} />
+      <div className={`absolute top-2 right-2 w-3 h-3 border-t border-r z-20 transition-colors duration-500 ${
+        showTakeover ? 'border-green-400' : isUserWinning && !effectivelyEnded ? 'border-green-500/40' : 'border-dgw-gold/20 group-hover:border-dgw-gold/50'
+      }`} />
+      <div className={`absolute bottom-2 left-2 w-3 h-3 border-b border-l z-20 transition-colors duration-500 ${
+        showTakeover ? 'border-green-400' : isUserWinning && !effectivelyEnded ? 'border-green-500/40' : 'border-dgw-gold/20 group-hover:border-dgw-gold/50'
+      }`} />
+      <div className={`absolute bottom-2 right-2 w-3 h-3 border-b border-r z-20 transition-colors duration-500 ${
+        showTakeover ? 'border-green-400' : isUserWinning && !effectivelyEnded ? 'border-green-500/40' : 'border-dgw-gold/20 group-hover:border-dgw-gold/50'
+      }`} />
 
       {/* OUTBID Banner */}
-      {isOutbid && !auctionEnded && (
+      {isOutbid && !effectivelyEnded && (
         <div className="absolute top-0 left-0 right-0 z-30 overflow-hidden">
           <div 
             className="relative py-1.5 text-center text-[0.65rem] font-bold tracking-[0.2em] uppercase"
@@ -1248,7 +1350,7 @@ function LotCard({
       <Link href={`/lots/${lot.id}`} className="block relative aspect-square cursor-pointer overflow-hidden" style={{ background: 'linear-gradient(180deg, #141210 0%, #0a0908 100%)' }}>
         {lot.images && lot.images.length > 0 ? (
           <>
-            <img src={lot.images[imageIndex]} alt={lot.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+            <img src={lot.images[imageIndex]} alt={lot.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
             {lot.images.length > 1 && (
               <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1 z-10">
                 {lot.images.map((_, i) => (
@@ -1292,20 +1394,19 @@ function LotCard({
         
         {/* Timer */}
         {lot.ends_at && (
-          <div className={`text-xs font-semibold mb-2 flex items-center gap-2 ${isEndingSoon ? 'text-red-400' : 'text-dgw-gold'}`}>
-            <span>{timeLeft}</span>
-            {lot.extended_count && lot.extended_count > 0 && (
-              <span className="px-1.5 py-0.5 bg-dgw-gold/20 text-dgw-gold text-[0.6rem] uppercase tracking-wider rounded animate-pulse">
-                Extended
-              </span>
-            )}
+          <div className="mb-2">
+            <LotCountdown
+              endsAt={lot.ends_at}
+              extendedCount={lot.extended_count || 0}
+              variant="card"
+            />
           </div>
         )}
 
         {/* Bid Info */}
         <div className="flex items-center justify-between mb-3 pb-3 border-b border-obsidian-800">
           <div>
-            {auctionEnded && lot.bid_count > 0 ? (
+            {effectivelyEnded && lot.bid_count > 0 ? (
               <>
                 <span className="text-[0.6rem] uppercase tracking-wider text-obsidian-500 block">
                   Sold For
@@ -1317,7 +1418,7 @@ function LotCard({
                   incl. {buyersPremiumPercent}% premium
                 </span>
               </>
-            ) : auctionEnded && lot.bid_count === 0 ? (
+            ) : effectivelyEnded && lot.bid_count === 0 ? (
               <>
                 <span className="text-[0.6rem] uppercase tracking-wider text-obsidian-500 block">
                   Result
@@ -1336,7 +1437,7 @@ function LotCard({
             )}
           </div>
           <div className="text-right">
-            {auctionEnded ? (
+            {effectivelyEnded ? (
               lot.bid_count > 0 ? (
                 <span className="text-xs font-bold text-green-400 bg-green-400/10 px-2 py-1 rounded">
                   SOLD
@@ -1360,7 +1461,7 @@ function LotCard({
         </div>
 
         {/* Bidding UI */}
-        {!auctionEnded && (
+        {!effectivelyEnded && (
           <div className="mt-auto space-y-2">
             {/* You're Winning State - with Increase Max Bid option */}
             {isUserWinning ? (
@@ -1390,6 +1491,13 @@ function LotCard({
                           onChange={(e) => {
                             setBidError("");
                             setMaxBidAmount(e.target.value.replace(/[^0-9]/g, ''));
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && maxBidAmount) {
+                              const amount = parseInt(maxBidAmount);
+                              if (amount > currentBid) placeBid(amount, true);
+                              else setBidError(`Must be higher than ${formatCurrency(currentBid)}`);
+                            }
                           }}
                           className="w-full pl-7 pr-3 py-2 bg-obsidian-900 border border-obsidian-700 text-obsidian-100 text-sm placeholder:text-obsidian-600 focus:outline-none focus:border-dgw-gold/50"
                         />
@@ -1464,6 +1572,9 @@ function LotCard({
                     onChange={(e) => {
                       setBidError("");
                       setCustomBidAmount(e.target.value.replace(/[^0-9]/g, ''));
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && customBidAmount) handleCustomBid();
                     }}
                     className="w-full pl-7 pr-3 py-2 bg-obsidian-900 border border-obsidian-700 text-obsidian-100 text-sm placeholder:text-obsidian-600 focus:outline-none focus:border-dgw-gold/50"
                   />

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
 import WatchlistButton from "@/components/WatchlistButton";
+import LotCountdown from "@/components/LotCountdown";
 import { createClient } from "@/lib/supabase/client";
 
 // Bid increment chart
@@ -258,10 +259,12 @@ export default function LotDetailPage({
   const [showIncreaseMax, setShowIncreaseMax] = useState(false);
   const [maxBidAmount, setMaxBidAmount] = useState("");
   const [bidding, setBidding] = useState(false);
+  const biddingRef = useRef(false); // Synchronous guard against double-tap
   const [bidError, setBidError] = useState("");
   const [bidSuccess, setBidSuccess] = useState(false);
   const [showConfirm, setShowConfirm] = useState<number | null>(null);
   const [showCelebration, setShowCelebration] = useState(false);
+  const [showTakeover, setShowTakeover] = useState(false);
   
   // Timer state
   const [timeLeft, setTimeLeft] = useState("");
@@ -275,13 +278,15 @@ export default function LotDetailPage({
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
 
-      // Check if user has a payment method on file
+      // Check if user has a payment method on file (via Stripe API)
       if (user) {
-        const { count } = await supabase
-          .from('payment_methods')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id);
-        setHasPaymentMethod((count || 0) > 0);
+        try {
+          const pmRes = await fetch('/api/stripe/payment-methods');
+          if (pmRes.ok) {
+            const pmData = await pmRes.json();
+            setHasPaymentMethod((pmData.paymentMethods || []).length > 0);
+          }
+        } catch { /* gate stays false, user sees "add payment" prompt */ }
       }
 
       const { data: lotData, error: lotError } = await supabase
@@ -419,7 +424,27 @@ export default function LotDetailPage({
   const isEnded = auction?.status === 'ended';
   const isPreview = auction?.status === 'preview';
 
+  // Client-side timer check: lot is effectively ended if its end time has passed
+  const lotEndTime = lot?.ends_at || auction?.ends_at;
+  const [timerEnded, setTimerEnded] = useState(false);
+
+  useEffect(() => {
+    if (!lotEndTime || !isLive) return;
+    const check = () => {
+      const remaining = new Date(lotEndTime).getTime() - Date.now();
+      if (remaining <= 0) setTimerEnded(true);
+    };
+    check();
+    const interval = setInterval(check, 1000);
+    return () => clearInterval(interval);
+  }, [lotEndTime, isLive]);
+
+  const effectivelyEnded = isEnded || timerEnded;
+
   const placeBid = async (amount: number, isIncreasingMax: boolean = false) => {
+    // Synchronous double-tap guard (React state updates are async)
+    if (biddingRef.current) return;
+
     if (!user) {
       router.push('/auth/signup');
       return;
@@ -446,6 +471,7 @@ export default function LotDetailPage({
       return;
     }
 
+    biddingRef.current = true;
     setBidding(true);
     setBidError("");
     setShowConfirm(null);
@@ -467,6 +493,7 @@ export default function LotDetailPage({
 
       if (result && !result.success) {
         setBidError(result.error || 'Bid failed');
+        biddingRef.current = false;
         setBidding(false);
         return;
       }
@@ -486,7 +513,9 @@ export default function LotDetailPage({
       if (result?.is_winning) {
         setBidSuccess(true);
         setShowCelebration(true);
+        setShowTakeover(true);
         setTimeout(() => setShowCelebration(false), 3500);
+        setTimeout(() => setShowTakeover(false), 3000);
       } else {
         setBidError("Outbid! Someone has a higher max bid.");
       }
@@ -498,6 +527,7 @@ export default function LotDetailPage({
       console.error('Bid error:', error);
       setBidError(error.message || 'Failed to place bid');
     } finally {
+      biddingRef.current = false;
       setBidding(false);
     }
   };
@@ -621,6 +651,7 @@ export default function LotDetailPage({
                     src={lot.images[selectedImageIndex]} 
                     alt={lot.title} 
                     className="w-full h-full object-contain relative z-0 transition-transform duration-700 group-hover:scale-[1.03]"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                   />
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center z-0">
@@ -720,20 +751,81 @@ export default function LotDetailPage({
 
               {/* Luxury Bidding Card */}
               <div 
-                className="relative p-8 mb-8 overflow-hidden"
+                className={`relative p-8 mb-8 overflow-hidden transition-shadow duration-500 ${
+                  showTakeover ? 'shadow-[0_0_50px_rgba(34,197,94,0.3)]' :
+                  isUserWinning ? 'shadow-[0_0_25px_rgba(34,197,94,0.08)]' : ''
+                }`}
                 style={{
                   background: 'linear-gradient(145deg, rgba(26, 22, 18, 0.9) 0%, rgba(13, 11, 9, 0.95) 100%)',
                 }}
               >
-                {/* Card border with glow */}
-                <div className="absolute inset-0 border border-dgw-gold/20 pointer-events-none" />
+                {/* Card border - green during takeover, subtle green when winning */}
+                <div className={`absolute inset-0 border pointer-events-none transition-colors duration-500 ${
+                  showTakeover ? 'border-green-500/60' :
+                  isUserWinning ? 'border-green-500/20' :
+                  'border-dgw-gold/20'
+                }`} />
                 <div className="absolute inset-0 shadow-[inset_0_1px_0_0_rgba(201,169,98,0.1)] pointer-events-none" />
                 
-                {/* Corner accents */}
-                <div className="absolute top-3 left-3 w-5 h-5 border-t border-l border-dgw-gold/50" />
-                <div className="absolute top-3 right-3 w-5 h-5 border-t border-r border-dgw-gold/50" />
-                <div className="absolute bottom-3 left-3 w-5 h-5 border-b border-l border-dgw-gold/50" />
-                <div className="absolute bottom-3 right-3 w-5 h-5 border-b border-r border-dgw-gold/50" />
+                {/* Corner accents - animate green on takeover */}
+                <div className={`absolute top-3 left-3 w-5 h-5 border-t border-l transition-colors duration-500 ${
+                  showTakeover ? 'border-green-400' : isUserWinning ? 'border-green-500/40' : 'border-dgw-gold/50'
+                }`} />
+                <div className={`absolute top-3 right-3 w-5 h-5 border-t border-r transition-colors duration-500 ${
+                  showTakeover ? 'border-green-400' : isUserWinning ? 'border-green-500/40' : 'border-dgw-gold/50'
+                }`} />
+                <div className={`absolute bottom-3 left-3 w-5 h-5 border-b border-l transition-colors duration-500 ${
+                  showTakeover ? 'border-green-400' : isUserWinning ? 'border-green-500/40' : 'border-dgw-gold/50'
+                }`} />
+                <div className={`absolute bottom-3 right-3 w-5 h-5 border-b border-r transition-colors duration-500 ${
+                  showTakeover ? 'border-green-400' : isUserWinning ? 'border-green-500/40' : 'border-dgw-gold/50'
+                }`} />
+
+                {/* Takeover sweep animation */}
+                {showTakeover && (
+                  <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden">
+                    <div 
+                      className="absolute inset-0"
+                      style={{
+                        background: 'linear-gradient(180deg, rgba(34,197,94,0.12) 0%, rgba(34,197,94,0.04) 50%, transparent 100%)',
+                        animation: 'takeoverFadeIn 0.4s ease-out',
+                      }}
+                    />
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: '100%',
+                        background: 'linear-gradient(90deg, transparent 0%, rgba(34,197,94,0.2) 50%, transparent 100%)',
+                        animation: 'takeoverSweep 0.8s ease-out',
+                      }}
+                    />
+                    {/* Top and bottom glow lines */}
+                    <div 
+                      className="absolute top-0 left-0 right-0 h-px"
+                      style={{
+                        background: 'linear-gradient(90deg, transparent, rgba(34,197,94,0.8), transparent)',
+                        animation: 'takeoverFadeIn 0.3s ease-out',
+                      }}
+                    />
+                    <div 
+                      className="absolute bottom-0 left-0 right-0 h-px"
+                      style={{
+                        background: 'linear-gradient(90deg, transparent, rgba(34,197,94,0.8), transparent)',
+                        animation: 'takeoverFadeIn 0.3s ease-out 0.1s both',
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* Persistent winning glow */}
+                {isUserWinning && !showTakeover && (
+                  <div className="absolute inset-0 pointer-events-none">
+                    <div className="absolute inset-0 bg-gradient-to-b from-green-500/[0.03] to-transparent" />
+                  </div>
+                )}
                 
                 {/* Breathing ambient glow */}
                 <div className="absolute inset-0 bg-gradient-to-br from-dgw-gold/[0.03] via-transparent to-dgw-gold/[0.02] animate-breathe pointer-events-none" />
@@ -741,12 +833,11 @@ export default function LotDetailPage({
                 {/* Timer Row */}
                 {isLive && (
                   <div className="mb-6 pb-6 border-b border-dgw-gold/10 flex items-end justify-between">
-                    <div>
-                      <span className="text-[0.6rem] uppercase tracking-[0.3em] text-obsidian-500 block mb-2">Time Remaining</span>
-                      <span className={`heading-display text-3xl ${timeLeft === 'Ended' ? 'text-red-400' : 'text-white'}`}>
-                        {timeLeft}
-                      </span>
-                    </div>
+                    <LotCountdown
+                      endsAt={lot.ends_at || auction.ends_at}
+                      extendedCount={lot.extended_count || 0}
+                      variant="detail"
+                    />
                     <button 
                       onClick={() => setShowBidHistory(true)}
                       className="text-right group"
@@ -809,7 +900,7 @@ export default function LotDetailPage({
                 )}
 
                 {/* Bidding UI */}
-                {isLive && !isEnded && (
+                {isLive && !effectivelyEnded && (
                   <div className="space-y-4 mt-8">
                     {/* Payment method gate */}
                     {user && !hasPaymentMethod && (
@@ -903,6 +994,13 @@ export default function LotDetailPage({
                                     setBidError("");
                                     setMaxBidAmount(e.target.value.replace(/[^0-9]/g, ''));
                                   }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && maxBidAmount) {
+                                      const amount = parseInt(maxBidAmount);
+                                      if (amount > currentBid) placeBid(amount, true);
+                                      else setBidError(`Must be higher than ${formatCurrency(currentBid)}`);
+                                    }
+                                  }}
                                   className="w-full pl-10 pr-4 py-3.5 bg-[#0a0a0a] border border-obsidian-700 text-white placeholder:text-obsidian-600 focus:outline-none focus:border-dgw-gold/50 text-lg transition-colors duration-300"
                                 />
                               </div>
@@ -981,6 +1079,9 @@ export default function LotDetailPage({
                                   setBidError("");
                                   setCustomBidAmount(e.target.value.replace(/[^0-9]/g, ''));
                                 }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' && customBidAmount) handleCustomBid();
+                                }}
                                 className="w-full pl-10 pr-4 py-3.5 bg-[#0a0a0a] border border-obsidian-700 text-white placeholder:text-obsidian-600 focus:outline-none focus:border-dgw-gold/50 text-lg transition-colors duration-300"
                               />
                             </div>
@@ -1005,7 +1106,7 @@ export default function LotDetailPage({
                   </div>
                 )}
 
-                {isEnded && (
+                {effectivelyEnded && (
                   <div className="text-center py-8 border-t border-dgw-gold/10 mt-6">
                     <p className="text-obsidian-500 uppercase tracking-[0.3em] text-xs mb-3">Auction Ended</p>
                     {(lot.bid_count || 0) > 0 && (

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Header from "@/components/Header";
+import HeroAuctionCard from "@/components/HeroAuctionCard";
 import { createClient } from "@/lib/supabase/server";
 
 interface Auction {
@@ -78,6 +79,19 @@ export default async function Home() {
     .limit(4);
 
   const hasAuctions = auctionsWithCounts.length > 0;
+  const liveAuction = auctionsWithCounts.find(a => a.status === 'live') || null;
+
+  // Get featured images from live auction lots
+  let heroImages: string[] = [];
+  if (liveAuction) {
+    const { data: heroLots } = await supabase
+      .from('lots')
+      .select('images')
+      .eq('auction_id', liveAuction.id)
+      .order('lot_number', { ascending: true })
+      .limit(4);
+    heroImages = (heroLots || []).map(l => l.images?.[0]).filter(Boolean);
+  }
   const hasLots = featuredLots && featuredLots.length > 0;
 
   return (
@@ -153,6 +167,19 @@ export default async function Home() {
               Create Account
             </Link>
           </div>
+
+          {/* Featured Live Auction Card */}
+          {liveAuction && (
+            <HeroAuctionCard
+              title={liveAuction.title}
+              slug={liveAuction.slug}
+              coverImage={liveAuction.cover_image}
+              endsAt={liveAuction.ends_at}
+              lotCount={liveAuction.lot_count || 0}
+              status={liveAuction.status}
+              featuredImages={heroImages}
+            />
+          )}
         </div>
 
         {/* Scroll indicator */}

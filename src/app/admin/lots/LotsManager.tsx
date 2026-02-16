@@ -261,15 +261,15 @@ export default function LotsManager({ initialLots, auctions, currentAuctionId, c
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => setShowBatchUpload(true)}
+          <Link
+            href="/admin/lots/import"
             className="btn btn-ghost"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
             </svg>
-            Batch Upload
-          </button>
+            CSV Import
+          </Link>
           <Link
             href={filterAuctionId ? `/admin/lots/new?auction=${filterAuctionId}` : '/admin/lots/new'}
             className="btn btn-primary"
