@@ -698,3 +698,48 @@ input:focus, textarea:focus, select:focus {
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(201, 169, 98, 0.3), transparent);
 }
+
+/* ==================== INFO/LEGAL PAGE PROSE ==================== */
+.prose-dgw h2 {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: #e8e8ec;
+  margin-top: 2.5rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(201, 169, 98, 0.15);
+}
+.prose-dgw h3 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #d1d1d9;
+  margin-top: 1.75rem;
+  margin-bottom: 0.75rem;
+}
+.prose-dgw p {
+  color: #8e8e9e;
+  font-size: 0.925rem;
+  line-height: 1.75;
+  margin-bottom: 1rem;
+}
+.prose-dgw ul, .prose-dgw ol {
+  color: #8e8e9e;
+  font-size: 0.925rem;
+  line-height: 1.75;
+  margin-bottom: 1rem;
+  padding-left: 1.5rem;
+}
+.prose-dgw ul { list-style-type: disc; }
+.prose-dgw ol { list-style-type: decimal; }
+.prose-dgw li { margin-bottom: 0.5rem; }
+.prose-dgw strong { color: #b8b8c1; font-weight: 600; }
+.prose-dgw a { color: #C9A962; text-decoration: underline; text-underline-offset: 2px; }
+.prose-dgw a:hover { color: #D4BC7D; }
+.prose-dgw .callout {
+  background: rgba(201, 169, 98, 0.05);
+  border: 1px solid rgba(201, 169, 98, 0.15);
+  padding: 1.25rem 1.5rem;
+  margin: 1.5rem 0;
+}
+.prose-dgw .callout p { color: #b8b8c1; margin-bottom: 0; }

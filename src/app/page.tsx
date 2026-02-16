@@ -359,44 +359,6 @@ export default async function Home() {
         </section>
       )}
 
-      {/* ==================== CATEGORIES ==================== */}
-      <section className="py-24">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-12">
-            <span className="section-label">Browse</span>
-            <h2 className="heading-display text-4xl">Categories</h2>
-            <div className="gold-line" />
-          </div>
-
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
-            {[
-              { name: "Pokémon Cards", icon: "🎴", href: "/categories/pokemon" },
-              { name: "Luxury Watches", icon: "⌚", href: "/categories/watches" },
-              { name: "Sports Cards", icon: "⚾", href: "/categories/sports" },
-              { name: "Fine Jewelry", icon: "💎", href: "/categories/jewelry" },
-            ].map((category, index) => (
-              <Link
-                key={category.name}
-                href={category.href}
-                className="category-card group p-8 text-center"
-                style={{
-                  animation: 'riseUp 0.5s ease-out forwards',
-                  animationDelay: `${index * 0.08}s`,
-                  opacity: 0,
-                }}
-              >
-                <div className="relative z-10">
-                  <span className="category-card-icon text-5xl mb-5 block">{category.icon}</span>
-                  <h3 className="text-lg font-medium text-obsidian-100 group-hover:text-dgw-gold transition-colors mb-2">
-                    {category.name}
-                  </h3>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* ==================== CTA ==================== */}
       <section className="py-28 relative overflow-hidden">
         <div className="hero-orb absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" style={{ opacity: 0.5 }} />
@@ -457,7 +419,7 @@ export default async function Home() {
               <ul className="space-y-4 text-sm text-obsidian-500">
                 <li><Link href="/how-it-works" className="hover:text-dgw-gold transition-colors">How It Works</Link></li>
                 <li><Link href="/faq" className="hover:text-dgw-gold transition-colors">FAQ</Link></li>
-                <li><Link href="/shipping" className="hover:text-dgw-gold transition-colors">Shipping</Link></li>
+                <li><Link href="/search" className="hover:text-dgw-gold transition-colors">Browse Lots</Link></li>
                 <li><Link href="/contact" className="hover:text-dgw-gold transition-colors">Contact Us</Link></li>
               </ul>
             </div>

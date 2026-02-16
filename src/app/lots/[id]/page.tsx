@@ -46,6 +46,8 @@ interface Lot {
   images: string[];
   condition: string | null;
   provenance: string | null;
+  ends_at: string | null;
+  extended_count: number;
 }
 
 interface Auction {
