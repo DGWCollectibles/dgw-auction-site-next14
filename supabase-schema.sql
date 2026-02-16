@@ -329,7 +329,7 @@ create table public.invoices (
 
   -- Payment
   status text default 'pending'
-    check (status in ('pending', 'paid', 'failed', 'refunded')),
+    check (status in ('pending', 'paid', 'failed', 'refunded', 'charge_failed', 'requires_action')),
   stripe_payment_intent_id text,
   paid_at timestamptz,
 
@@ -337,6 +337,9 @@ create table public.invoices (
   shipping_address jsonb,
   tracking_number text,
   shipped_at timestamptz,
+
+  -- Admin notes (charge failures, SCA issues, etc.)
+  notes text,
 
   created_at timestamptz default now(),
   updated_at timestamptz default now()
@@ -734,6 +737,46 @@ begin
 
   -- Store the previous winner for outbid notification
   v_previous_winner_id := v_lot.winning_bidder_id;
+
+  -- ========================================================================
+  -- EARLY RETURN: WINNING BIDDER INCREASING THEIR MAX
+  -- If the bidder is already winning and submitting a higher max,
+  -- just update the ceiling without changing the current bid price.
+  -- This prevents bidding against yourself.
+  -- ========================================================================
+  if v_lot.winning_bidder_id = p_user_id
+     and v_effective_max > coalesce((
+       select max_bid from public.bids
+       where lot_id = p_lot_id and user_id = p_user_id and is_winning = true
+       order by created_at desc limit 1
+     ), 0)
+  then
+    -- Record the max bid increase
+    insert into public.bids (lot_id, user_id, amount, max_bid, is_winning, is_auto_bid)
+    values (p_lot_id, p_user_id, v_lot.current_bid, v_effective_max, true, false);
+
+    -- Clear old winning flags, set new one
+    update public.bids
+    set is_winning = false
+    where lot_id = p_lot_id and is_winning = true and user_id = p_user_id
+      and id != (select id from public.bids where lot_id = p_lot_id and user_id = p_user_id order by created_at desc limit 1);
+
+    -- bid_count increments by 1
+    update public.lots
+    set bid_count = bid_count + 1
+    where id = p_lot_id;
+
+    return jsonb_build_object(
+      'success', true,
+      'current_bid', v_lot.current_bid,  -- UNCHANGED
+      'winning_bidder_id', p_user_id,
+      'is_winning', true,
+      'bid_count', (select bid_count from public.lots where id = p_lot_id),
+      'extended', false,
+      'ends_at', v_lot.ends_at,
+      'max_increased', true
+    );
+  end if;
 
   -- ========================================================================
   -- PROXY BIDDING ENGINE

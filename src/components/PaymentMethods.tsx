@@ -115,6 +115,12 @@ export default function PaymentMethods() {
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [processing, setProcessing] = useState<string | null>(null);
 
+  const syncPaymentMethodsToDb = async () => {
+    try {
+      await fetch('/api/stripe/sync-payment-method', { method: 'POST' });
+    } catch { /* non-fatal -- gate will still work after next sync */ }
+  };
+
   const fetchPaymentMethods = async () => {
     const res = await fetch(`/api/stripe/payment-methods`);
     const data = await res.json();
@@ -123,7 +129,8 @@ export default function PaymentMethods() {
   };
 
   useEffect(() => {
-    fetchPaymentMethods();
+    // Sync Stripe -> DB on mount (catches any out-of-sync state)
+    syncPaymentMethodsToDb().then(() => fetchPaymentMethods());
   }, []);
 
   const handleAddCard = async () => {
@@ -181,10 +188,12 @@ export default function PaymentMethods() {
     }
   };
 
-  const handleCardAdded = () => {
+  const handleCardAdded = async () => {
     setShowAddCard(false);
     setClientSecret(null);
-    fetchPaymentMethods();
+    // Sync new card from Stripe to our DB (enables bidding gate)
+    await syncPaymentMethodsToDb();
+    await fetchPaymentMethods();
   };
 
   if (loading) {

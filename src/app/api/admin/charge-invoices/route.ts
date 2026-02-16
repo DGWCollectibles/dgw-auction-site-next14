@@ -48,6 +48,12 @@ export async function POST(request: NextRequest) {
 
     for (const invoice of invoices) {
       try {
+        // DOUBLE-CHARGE GUARD: Skip if already has a payment intent
+        if (invoice.stripe_payment_intent_id) {
+          console.log(`Invoice ${invoice.id} already has PI ${invoice.stripe_payment_intent_id}, skipping`);
+          continue;
+        }
+
         // Get user's Stripe customer ID from profiles
         const { data: profile } = await supabaseAdmin
           .from('profiles')
@@ -56,6 +62,10 @@ export async function POST(request: NextRequest) {
           .single();
 
         if (!profile?.stripe_customer_id) {
+          await supabaseAdmin
+            .from('invoices')
+            .update({ status: 'charge_failed', notes: 'No Stripe customer ID on file' })
+            .eq('id', invoice.id);
           results.errors.push({
             invoice_id: invoice.id,
             email: profile?.email || 'Unknown',
@@ -69,6 +79,10 @@ export async function POST(request: NextRequest) {
         const customer = await stripe.customers.retrieve(profile.stripe_customer_id) as Stripe.Customer;
         
         if (!customer.invoice_settings?.default_payment_method && !customer.default_source) {
+          await supabaseAdmin
+            .from('invoices')
+            .update({ status: 'charge_failed', notes: 'No payment method on file' })
+            .eq('id', invoice.id);
           results.errors.push({
             invoice_id: invoice.id,
             email: profile?.email || 'Unknown',
@@ -80,7 +94,7 @@ export async function POST(request: NextRequest) {
 
         const paymentMethodId = customer.invoice_settings?.default_payment_method as string || customer.default_source as string;
 
-        // Create PaymentIntent and confirm immediately
+        // Create PaymentIntent with idempotency key to prevent double-charges
         const paymentIntent = await stripe.paymentIntents.create({
           amount: Math.round(invoice.total * 100), // Convert to cents
           currency: 'usd',
@@ -94,6 +108,8 @@ export async function POST(request: NextRequest) {
             auction_id: auction_id,
             user_id: invoice.user_id,
           },
+        }, {
+          idempotencyKey: `charge-invoice-${invoice.id}`,
         });
 
         if (paymentIntent.status === 'succeeded') {
@@ -108,7 +124,33 @@ export async function POST(request: NextRequest) {
             .eq('id', invoice.id);
 
           results.charged++;
+        } else if (paymentIntent.status === 'requires_action' || paymentIntent.status === 'requires_confirmation') {
+          // SCA/3DS required -- mark for manual follow-up
+          await supabaseAdmin
+            .from('invoices')
+            .update({
+              status: 'requires_action',
+              stripe_payment_intent_id: paymentIntent.id,
+              notes: 'Card requires 3D Secure verification. Customer must complete payment manually.',
+            })
+            .eq('id', invoice.id);
+
+          results.errors.push({
+            invoice_id: invoice.id,
+            email: profile?.email || 'Unknown',
+            error: 'Requires 3D Secure -- customer must pay manually'
+          });
+          results.failed++;
         } else {
+          await supabaseAdmin
+            .from('invoices')
+            .update({
+              status: 'charge_failed',
+              stripe_payment_intent_id: paymentIntent.id,
+              notes: `Payment status: ${paymentIntent.status}`,
+            })
+            .eq('id', invoice.id);
+
           results.errors.push({
             invoice_id: invoice.id,
             email: profile?.email || 'Unknown',
@@ -126,6 +168,15 @@ export async function POST(request: NextRequest) {
           .select('email')
           .eq('id', invoice.user_id)
           .single();
+
+        // Mark as failed so it's not retried blindly
+        await supabaseAdmin
+          .from('invoices')
+          .update({
+            status: 'charge_failed',
+            notes: stripeError.message || 'Stripe charge failed',
+          })
+          .eq('id', invoice.id);
           
         results.errors.push({
           invoice_id: invoice.id,

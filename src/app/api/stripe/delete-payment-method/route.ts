@@ -30,12 +30,14 @@ export async function POST(request: NextRequest) {
       .eq('id', userId)
       .single();
 
-    if (profile?.stripe_customer_id) {
-      // Verify the payment method belongs to this customer
-      const pm = await stripe.paymentMethods.retrieve(payment_method_id);
-      if (pm.customer !== profile.stripe_customer_id) {
-        return NextResponse.json({ error: 'Payment method does not belong to this user' }, { status: 403 });
-      }
+    if (!profile?.stripe_customer_id) {
+      return NextResponse.json({ error: 'No Stripe customer found' }, { status: 404 });
+    }
+
+    // Verify the payment method belongs to this customer
+    const pm = await stripe.paymentMethods.retrieve(payment_method_id);
+    if (pm.customer !== profile.stripe_customer_id) {
+      return NextResponse.json({ error: 'Payment method does not belong to this user' }, { status: 403 });
     }
 
     // Detach the payment method from the customer

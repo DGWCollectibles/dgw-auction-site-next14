@@ -453,7 +453,8 @@ export default function LotDetailPage({
     if (!lotEndTime || !isLive) return;
     const check = () => {
       const remaining = new Date(lotEndTime).getTime() - Date.now();
-      if (remaining <= 0) setTimerEnded(true);
+      // Must go BOTH ways: true when expired, false when soft-close extends
+      setTimerEnded(remaining <= 0);
     };
     check();
     const interval = setInterval(check, 1000);

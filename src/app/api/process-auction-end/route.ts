@@ -46,6 +46,9 @@ export async function POST(request: NextRequest) {
 
   try {
     // Find auctions that should have ended
+    // With staggered closing, we must check that ALL lots have closed,
+    // not just the auction's base ends_at. The last lot may end 30+ min later,
+    // and soft-close extensions push individual lots even further.
     const now = new Date().toISOString();
     
     const { data: endedAuctions, error: fetchError } = await supabaseAdmin
@@ -66,9 +69,43 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Filter to only auctions where ALL lots have actually closed
+    const readyAuctions = [];
+    for (const auction of endedAuctions) {
+      // Count lots that are still open (ends_at in the future)
+      const { count: openCount } = await supabaseAdmin
+        .from('lots')
+        .select('*', { count: 'exact', head: true })
+        .eq('auction_id', auction.id)
+        .in('status', ['upcoming', 'live'])
+        .gt('ends_at', now);
+
+      // Also check lots with null ends_at (shouldn't happen but safety)
+      const { count: nullEndsCount } = await supabaseAdmin
+        .from('lots')
+        .select('*', { count: 'exact', head: true })
+        .eq('auction_id', auction.id)
+        .in('status', ['upcoming', 'live'])
+        .is('ends_at', null);
+
+      if ((openCount || 0) === 0 && (nullEndsCount || 0) === 0) {
+        readyAuctions.push(auction);
+      } else {
+        console.log(`Auction ${auction.title}: ${(openCount || 0) + (nullEndsCount || 0)} lots still open (staggered/extended), skipping`);
+      }
+    }
+
+    if (readyAuctions.length === 0) {
+      return NextResponse.json({ 
+        message: 'Auctions found but lots still closing (staggered/extended)',
+        processed: 0,
+        waiting: endedAuctions.length
+      });
+    }
+
     const results = [];
 
-    for (const auction of endedAuctions) {
+    for (const auction of readyAuctions) {
       console.log(`Processing auction end: ${auction.title} (${auction.id})`);
       
       // Call the process_auction_end function (creates invoices, marks lots sold, etc.)
@@ -98,8 +135,8 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({
-      message: `Processed ${endedAuctions.length} auction(s)`,
-      processed: endedAuctions.length,
+      message: `Processed ${readyAuctions.length} auction(s)`,
+      processed: readyAuctions.length,
       results
     });
 

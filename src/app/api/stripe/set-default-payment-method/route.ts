@@ -40,12 +40,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Payment method does not belong to this user' }, { status: 403 });
     }
 
-    // Set as default payment method
+    // Set as default payment method on Stripe
     await stripe.customers.update(profile.stripe_customer_id, {
       invoice_settings: {
         default_payment_method: payment_method_id,
       },
     });
+
+    // Sync is_default to our DB
+    await supabaseAdmin
+      .from('payment_methods')
+      .update({ is_default: false })
+      .eq('user_id', userId);
+
+    await supabaseAdmin
+      .from('payment_methods')
+      .update({ is_default: true })
+      .eq('stripe_payment_method_id', payment_method_id);
 
     return NextResponse.json({ success: true });
 

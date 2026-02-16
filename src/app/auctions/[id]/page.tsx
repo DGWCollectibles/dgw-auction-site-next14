@@ -991,7 +991,8 @@ function LotCard({
     if (!lot.ends_at || auctionEnded) return;
     const endsAt = lot.ends_at;
     const check = () => {
-      if (new Date(endsAt).getTime() - Date.now() <= 0) setLotTimerEnded(true);
+      // Must go BOTH ways: true when expired, false when soft-close extends
+      setLotTimerEnded(new Date(endsAt).getTime() - Date.now() <= 0);
     };
     check();
     const interval = setInterval(check, 1000);
