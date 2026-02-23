@@ -9,28 +9,28 @@ export default async function LotsPage({
   const { auction: auctionId } = searchParams
   const supabase = await createClient()
 
-  // Get all lots (we'll filter client-side for better drag/drop UX)
+  // Get all lots with bid counts and timing info
   const { data: lots } = await supabase
     .from('lots')
-    .select('*, auctions(title, slug)')
+    .select('*, auctions(title, slug, status)')
     .order('lot_number', { ascending: true })
-    .limit(500)
+    .limit(1000)
 
   // Get auction details if filtered
   let auction = null
   if (auctionId) {
     const { data } = await supabase
       .from('auctions')
-      .select('id, title')
+      .select('id, title, status')
       .eq('id', auctionId)
       .single()
     auction = data
   }
 
-  // Get all auctions for filter dropdown
+  // Get all auctions for filter dropdown (include status)
   const { data: auctions } = await supabase
     .from('auctions')
-    .select('id, title')
+    .select('id, title, status')
     .order('created_at', { ascending: false })
 
   return (

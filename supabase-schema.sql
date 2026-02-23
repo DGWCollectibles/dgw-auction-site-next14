@@ -1446,6 +1446,95 @@ end;
 $$ language plpgsql security definer;
 
 
+-- ----------------------------------------------------------------------------
+-- 7b. BATCH REORDER LOTS
+-- Called by: admin lots manager drag-and-drop
+-- Takes a JSON array of {id, lot_number} pairs and updates all in one
+-- transaction. If the auction is live, recalculates staggered end times
+-- for all lots, preserving soft-close extensions (uses the LATER of
+-- recalculated time vs. existing extended time).
+-- ----------------------------------------------------------------------------
+
+create or replace function public.batch_reorder_lots(
+  p_auction_id uuid,
+  p_lot_order jsonb  -- array of {"id": "uuid", "lot_number": int}
+)
+returns jsonb as $$
+declare
+  v_auction record;
+  v_item jsonb;
+  v_lot_id uuid;
+  v_new_number int;
+  v_interval_seconds int;
+  v_base_end timestamptz;
+  v_lot record;
+  v_position int := 0;
+  v_recalculated int := 0;
+begin
+  -- Lock auction row
+  select * into v_auction
+  from public.auctions
+  where id = p_auction_id
+  for update;
+
+  if not found then
+    return jsonb_build_object('success', false, 'error', 'Auction not found');
+  end if;
+
+  -- Step 1: Update all lot_numbers from the provided order
+  for v_item in select * from jsonb_array_elements(p_lot_order)
+  loop
+    v_lot_id := (v_item ->> 'id')::uuid;
+    v_new_number := (v_item ->> 'lot_number')::int;
+
+    update public.lots
+    set lot_number = v_new_number
+    where id = v_lot_id and auction_id = p_auction_id;
+  end loop;
+
+  -- Step 2: If auction is live, recalculate staggered end times
+  if v_auction.status = 'live' then
+    v_interval_seconds := coalesce(v_auction.lot_close_interval_seconds, 20);
+    v_base_end := v_auction.ends_at;
+
+    for v_lot in
+      select id, lot_number, ends_at, extended_count, status
+      from public.lots
+      where auction_id = p_auction_id
+        and status in ('upcoming', 'live')
+      order by lot_number asc
+    loop
+      declare
+        v_calculated_end timestamptz;
+      begin
+        v_calculated_end := v_base_end + ((v_position * v_interval_seconds) || ' seconds')::interval;
+
+        -- Preserve soft-close extensions: use the LATER time
+        if v_lot.extended_count > 0 and v_lot.ends_at > v_calculated_end then
+          -- Lot was extended beyond its recalculated position, keep extended time
+          null; -- no update needed
+        else
+          update public.lots
+          set ends_at = v_calculated_end
+          where id = v_lot.id;
+          v_recalculated := v_recalculated + 1;
+        end if;
+
+        v_position := v_position + 1;
+      end;
+    end loop;
+  end if;
+
+  return jsonb_build_object(
+    'success', true,
+    'lots_reordered', jsonb_array_length(p_lot_order),
+    'ends_recalculated', v_recalculated,
+    'auction_status', v_auction.status
+  );
+end;
+$$ language plpgsql security definer;
+
+
 -- ============================================================================
 -- 8. REALTIME CONFIGURATION
 -- ============================================================================
